@@ -1,0 +1,610 @@
+---
+title: "Doble Carga y Desigualdad Espacial: Un Análisis Bivariado de la Persistencia Laboral y el Hacinamiento en Adultos Mayores de Santiago (CENSO 2017)"
+author: "Valentin Gonzalez"
+date: "18/10/2025"
+output: html_document
+---
+
+# 1.Introducción
+
+El envejecimiento poblacional en la **Región Metropolitana de Santiago (RMS)** constituye un fenómeno demográfico con profundas implicancias en el tejido social y el **ordenamiento territorial**. La calidad de vida en la tercera edad ya no solo se mide por la suficiencia de las pensiones, sino por la interacción de variables económicas, sociales y espaciales que se distribuyen de forma desigual en el territorio.
+
+Este estudio se enfoca en analizar la **"Doble Vulnerabilidad"** de los adultos mayores ($65+$ años) urbanos de la Provincia de Santiago, examinando la convergencia de dos dimensiones de precariedad extraídas del **CENSO 2017**:
+
+1.  **Hacinamiento:** El déficit habitacional reflejado en la proporción de hogares con AM que residen en condiciones de **hacinamiento medio, alto o crítico**.
+
+2.  **Persistencia Laboral:** La proporción de AM que, por necesidad, debe **mantenerse activa laboralmente** (trabajando por un pago).
+
+### La Paradoja de la Persistencia Laboral
+
+Una de las premisas intuitivas en el análisis de la desigualdad es que la necesidad económica extrema impulsa la participación laboral. Sin embargo, este trabajo identifica una **paradoja territorial crucial**: mientras que el hacinamiento se acumula consistentemente en las zonas periféricas y vulnerables de Santiago, la **tasa de persistencia laboral** de los adultos mayores tiende a ser **mayor en los sectores centrales y de mas poder adquisitivo**.
+
+Este hallazgo contraintuitivo sugiere que, en las comunas y zonas censales más empobrecidas, la vulnerabilidad se profundiza hasta el punto de la **ausencia total de oportunidades**. Es decir, la precariedad en la periferia podría estar marcada no solo por bajos ingresos y déficit habitacional, sino también por:
+
+-   **Mayor Deterioro de Capital Humano:** Condiciones de salud más deficientes que impiden la prolongación de la vida laboral.
+
+-   **Escasez Crítica de Ofertas:** Una infraestructura económica local incapaz de generar empleos adecuados o de baja exigencia para la población senior.
+
+Las zonas censales donde hay **ausencia de registro de** AM trabajando se concentran en el sector de mas **alto poder adquisitivo** Esta ausencia de registros de trabajo en esas áreas se debe a que la población AM residente ahí es la que menos depende de un sueldo.
+
+Esta perspectiva transforma la variable laboral, pasando de ser un indicador de "actividad" a un indicador de **"oportunidad económica"** en el territorio.
+
+## 1.1 Objetivo General
+
+**Mapear, analizar e interpretar la distribución espacial de la Doble Vulnerabilidad** (Hacinamiento vs. Persistencia Laboral) en los adultos mayores (>65 años) de la Provincia de Santiago, utilizando datos del CENSO 2017, con el fin de identificar **clusters de riesgo social** que informen la focalización de políticas públicas y el diseño del ordenamiento territorial.
+
+## 1.2 Objetivos Específicos 
+
+Los objetivos específicos representan los pasos metodológicos y analíticos clave de este trabajo:
+
+-   **Análisis Univariado y Contextualización:** Analizar la distribución geográfica individual de la **Tasa de Hacinamiento** y la **Persistencia Laboral** en los adultos mayores para establecer los patrones univariados de desigualdad socio-habitacional y económica en las zonas censales de la Provincia de Santiago.
+
+-   **Generación del Mapa Bivariado:** Clasificar el territorio de la Provincia de Santiago mediante un **análisis geoespacial bivariado (Mapa Bivariado)** que combine ambas variables, creando cuadrantes que muestren las distintas formas de vulnerabilidad territoria
+
+-   **Interpretación de la Paradoja y los Clusters de Riesgo:** Identificar, delimitar y caracterizar los **clusters de "Doble Vulnerabilidad"** (Alto Hacinamiento $\cap$ Baja Tasa de Empleo) y los patrones anómalos, interpretando la **paradoja de la baja persistencia laboral** en las zonas más vulnerables como una manifestación de la escasez de oportunidades económicas o de las barreras de salud impuestas por la segregación.
+
+---------------------------------------------------------------------------
+
+# 2.Desarrollo
+
+El desarrollo de este trabajo se fundamentó en un enfoque de **análisis geoespacial cuantitativo**, utilizando como principales entornos de trabajo **PostgreSQL** (gestionado vía *pgAdmin*) para el procesamiento y extracción de datos, y **RStudio** para el cálculo estadístico y la visualización cartográfica avanzada.
+
+El estudio se centró en la **Provincia de Santiago**, dentro de la Región Metropolitana. Se seleccionó la **zona censal urbana** como la unidad mínima de análisis. Esta desagregación territorial es crucial, ya que permite la observación de la **heterogeneidad intra-comunal**, revelando patrones de desigualdad a nivel de barrio que serían invisibles al utilizar unidades mayores (como la comuna). El análisis se enfocó exclusivamente en la población de **Adultos Mayores (65 años y más)**, extrayendo los datos directamente del Diccionario Censal de 2017.
+
+## 2.1 Metodología
+
+### 2.1.1 Librerías
+
+Para desarrollar el análisis en R se cargaron las siguiente librerías:
+
+```{r librerias, echo=TRUE, message=FALSE, warning=FALSE}
+if (!require(DBI)) install.packages("DBI")
+if (!require(RPostgres)) install.packages("RPostgres")
+if (!require(sf)) install.packages("sf")
+if (!require(ggplot2)) install.packages("ggplot2")
+if (!require(dplyr)) install.packages("dplyr")
+if (!require(biscale)) install.packages("biscale")
+if (!require(cowplot)) install.packages("cowplot")
+if (!require(viridis)) install.packages("viridis")
+if (!require(ggrepel)) install.packages("ggrepel")
+
+library(DBI)
+library(RPostgres)
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(biscale)
+library(cowplot)
+library(viridis)
+library(ggrepel)
+```
+
+Estas librerías permiten establecer conexiones con bases de datos PostgreSQL, manejar geometrías espaciales (`sf`) y generar visualizaciones estadísticas y cartográficas.
+
+### 2.1.2 Conexión Base de Datos PostgreSQL
+
+Se estableció una conexión con una base de datos local en PostgreSQL que contiene las tablas del Censo 2017 para la Región Metropolitana.
+
+```{r conexion, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Conectando a la base de datos...\n")
+con <- dbConnect(
+  Postgres(),
+  dbname= "censo_rm_2017",
+  host= "localhost",
+  port= 5432,
+  user= "postgres",
+  password = "postgres"
+)
+cat("✓ Conexión exitosa\n")
+
+```
+
+Para la construcción de los indicadores, se emplearon las siguientes variables originales del Diccionario Censal 2017, extraídas de las tablas `public.personas` y `public.viviendas`:
+
+|  |  |  |  |
+|----|----|----|----|
+| **Variable Base** | **Tabla** | **Descripción** | **Uso en el Análisis** |
+| **p09** | `personas` | Edad en años cumplidos. | Filtro principal: Se seleccionaron solo las personas con **edad** >65 años (Adultos Mayores). |
+| **p17** | `personas` | Trabajo durante la semana pasada. | Se contó el valor **1 ("Por Un Pago en Dinero o Especies")** para determinar la población $\text{AM}$ trabajadora. |
+| **ind_hacin_rec** | `viviendas` | Índice de hacinamiento recodificado. | Se seleccionaron los valores **2 ("Hacinamiento Medio"), 3 ("Hacinamiento Alto"), y 4 ("Hacinamiento Crítico")** para definir los hogares en precariedad habitacional. |
+
+La consulta SQL ejecutada al inicio del proceso no solo extrajo las variables base, sino que también **calculó y generó** los indicadores de interés a nivel de zona censal, resultando en la siguiente tabla (`df_indicadores`):
+
+|  |  |  |
+|----|----|----|
+| **Variable Generada** | **Tipo** | **Descripción** |
+| **geocodigo** | Identificador | Código geográfico único de la zona censal urbana, utilizado para la unión (*merge*) con la geometría. |
+| **nom_comuna** | Contexto | Nombre de la comuna a la que pertenece la zona censal. |
+| **porc_am_trabajando** | Indicador | **Persistencia Laboral:** Porcentaje de Adultos Mayores (>65años) en la zona censal que declararon trabajar por un pago. |
+| **porc_hacinamiento_am** | Indicador | **Hacinamiento AM:** Porcentaje de hogares con $\text{AM}$ en la zona censal que presentan hacinamiento (índice 2, 3 o 4). |
+| **total_adultos_mayores** | Descriptivo | Conteo de $\text{AM}$ utilizados como denominador para la Tasa de Empleo. |
+| **total_hogares_con_am** | Descriptivo | Conteo de hogares utilizados como denominador para el Hacinamiento. |
+
+### 2.1.3 Consulta Indicadores
+
+El objetivo metodológico fue calcular y representar indicadores sociales relevantes que midieran la doble vulnerabilidad de los adultos mayores desde una **perspectiva económica y habitacional**.
+
+#### 1. Persistencia Laboral en Adultos Mayores (Tasa de Empleo AM)
+
+Este indicador cuantifica la **dependencia laboral de los adultos mayores**, sirviendo como *proxy* de la insuficiencia de seguridad económica o previsional.
+
+-   **Definición:** Proporción de adultos mayores (65+ años) que declararon haber trabajado por un pago en dinero o especie durante la semana pasada.
+
+-   **Fórmula:** \$\$\\text{Tasa de Empleo AM} = \\left( \\frac{\\text{Adultos Mayores con p17 = 1}}{\\text{Total de Adultos Mayores (65+ años)}} \\right) \\times 100\$\$
+
+#### 2. Hacinamiento en Hogares con Adultos Mayores
+
+Este indicador mide la **precariedad de las condiciones de vivienda**, identificando hogares con densidad excesiva.
+
+-   **Definición:** Proporción de hogares que cuentan con al menos un adulto mayor residente y que presentan un nivel de hacinamiento **moderado o crítico**, de acuerdo con la clasificación oficial del Censo 2017 (Índice de Hacinamiento Recodificado, ind_hacin_rec = 2, 3 o $4$).
+
+-   **Fórmula:** \$\$\\text{Porcentaje de Hacinamiento AM} = \\left( \\frac{\\text{Hogares con AM donde } ind\\\_hacin\\\_rec \\in \\{2, 3, 4\\}}{\\text{Total de Hogares con AM}} \\right) \\times 100\$\$
+
+```{r consulta, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Extrayendo indicadores...\n")
+
+sql_indicadores <- "
+SELECT
+ z.geocodigo::double precision AS geocodigo,
+ c.nom_comuna,
+ -- % Adultos mayores que trabajan (p17 = 1)
+ COALESCE(ROUND(
+ COUNT(*) FILTER (WHERE p.p17 = 1) * 100.0 /
+ NULLIF(COUNT(*), 0), 2), 0) AS porc_am_trabajando,
+ -- % Hogares con AM en hacinamiento (ind_hacin_rec IN (2,3,4))
+ COALESCE(ROUND(
+ COUNT(DISTINCT h.hogar_ref_id) FILTER (WHERE v.ind_hacin_rec IN (2,3,4)) * 100.0 /
+ NULLIF(COUNT(DISTINCT h.hogar_ref_id), 0), 2), 0) AS porc_hacinamiento_am,
+ COUNT(*) as total_adultos_mayores,
+ COUNT(DISTINCT h.hogar_ref_id) as total_hogares_con_am
+FROM public.personas AS p
+JOIN public.hogares AS h ON p.hogar_ref_id = h.hogar_ref_id
+JOIN public.viviendas AS v ON h.vivienda_ref_id = v.vivienda_ref_id
+JOIN public.zonas AS z ON v.zonaloc_ref_id = z.zonaloc_ref_id
+JOIN public.comunas AS c ON z.codigo_comuna= c.codigo_comuna
+JOIN public.provincias AS pr ON c.provincia_ref_id = pr.provincia_ref_id
+WHERE p.p09 >= 65
+ AND pr.nom_provincia = 'SANTIAGO'
+GROUP BY z.geocodigo, c.nom_comuna;
+"
+df_indicadores <- dbGetQuery(con, sql_indicadores)
+cat("✓ Indicadores extraídos:", nrow(df_indicadores), "zonas censales\n")
+
+```
+
+### 2.1.4 Consulta Geometría
+
+La fase inicial del procesamiento requirió la conexión directa a la base de datos **PostgreSQL** (`censo_rm_2017`) mediante la librería `RPostgres`. Esto permitió extraer los datos tabulares de las tablas `public.personas`, `public.hogares` y `public.viviendas`, y luego combinarlos con la **geometría de las zonas censales urbanas** de la Provincia de Santiago. El resultado de estas consultas es la base geoespacial del estudio: un *dataset* que vincula los indicadores sociales calculados a su unidad espacial mínima para el posterior mapeo y análisis en R.
+
+```{r consultageometria, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Extrayendo geometría...\n")
+sql_geometria <- "
+SELECT
+ geocodigo::double precision AS geocodigo,
+ geom
+FROM dpa.zonas_censales_rm
+WHERE nom_provin = 'SANTIAGO' AND urbano = 1;
+"
+sf_zonas <- st_read(con, query = sql_geometria)
+cat("✓ Geometría extraída:", nrow(sf_zonas), "zonas urbanas\n")
+
+# 4b. CONSULTA DE GEOMETRÍA DE COMUNAS PARA ETIQUETAS -------------------------
+cat("Extrayendo geometría de comunas para etiquetas...\n")
+sql_comunas <- "
+SELECT nom_comuna, geom
+FROM dpa.comunas_rm_shp
+WHERE nom_provin = 'SANTIAGO';
+"
+sf_comunas <- st_read(con, query = sql_comunas)
+sf_comunas_centroides <- st_centroid(sf_comunas)
+cat("✓ Geometría de comunas extraída:", nrow(sf_comunas), "comunas\n")
+
+```
+
+### 2.1.5 Unir Datos y Geometria
+
+Una vez extraída la información tabular de los indicadores socioeconómicos y la geometría correspondiente a las zonas censales urbanas de la Provincia de Santiago, el siguiente paso fundamental fue la **integración de ambos *datasets***. Este proceso de **unión de datos** (merge) vinculó los porcentajes calculados de Hacinamiento y Persistencia Laboral a sus respectivas coordenadas geográficas a través del campo identificador único (`geocodigo`). La exitosa culminación de esta etapa resultó en el *Spatial Data Frame* final (`sf_mapa`), la base de datos geográfica que permitió realizar el análisis espacial, la clasificación bivariada y la generación de todas las visualizaciones cartográficas presentadas en este trabajo.
+
+```{r unirdatosygeom, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Uniendo datos...\n")
+sf_mapa <- merge(sf_zonas, df_indicadores, by = "geocodigo", all.x = FALSE)
+cat("✓ Datos unidos:", nrow(sf_mapa), "registros finales\n")
+
+```
+
+### 2.1.6 Análisis Descriptivo
+
+Previo a la visualización cartográfica bivariada, se realizó un **análisis descriptivo** de las variables de Persistencia Laboral y Hacinamiento. Este paso fue esencial para comprender la dispersión y los valores centrales de los datos, permitiendo **establecer los umbrales de clasificación** (medianas y percentiles). Estos umbrales determinaron los puntos de corte para la matriz 3x3 utilizada en el análisis bivariado, asegurando una división equitativa de las zonas censales según la distribución real de las variables.
+
+```{r analisisdescriptivo, echo=TRUE, message=FALSE, warning=FALSE}
+mediana_trabajo <- median(sf_mapa$porc_am_trabajando, na.rm = TRUE)
+mediana_hacinamiento <- median(sf_mapa$porc_hacinamiento_am, na.rm = TRUE)
+limites_trabajo <- quantile(sf_mapa$porc_am_trabajando, c(0.05, 0.95), na.rm = TRUE)
+limites_hacinamiento <- quantile(sf_mapa$porc_hacinamiento_am, c(0.05, 0.95), na.rm = TRUE)
+cat("\n=== ANÁLISIS DESCRIPTIVO ===\n")
+cat("Rango de % Trabajo:", range(sf_mapa$porc_am_trabajando, na.rm = TRUE), "\n")
+cat("Rango de % Hacinamiento:", range(sf_mapa$porc_hacinamiento_am, na.rm = TRUE), "\n")
+cat("Mediana Trabajo:", mediana_trabajo, "\n")
+cat("Mediana Hacinamiento:", mediana_hacinamiento, "\n")
+```
+
+### 2.1.7 Mapas Individuales
+
+Una vez definidos los umbrales de clasificación mediante el análisis descriptivo, el siguiente paso fue la generación de los **Mapas Univariados** para cada indicador.
+
+La visualización individual de la **Persistencia Laboral** y el **Hacinamiento** es fundamental para contextualizar la distribución de la vulnerabilidad antes de combinarlas. Estos mapas permiten al lector identificar rápidamente los **patrones dominantes** de segregación en cada variable:
+
+1.  **Mapa de Persistencia Laboral:** Muestra dónde se concentra la *Tasa de Empleo* en adultos mayores. Su análisis revela la **paradoja territorial**, distinguiendo las áreas de alta tasa de empleo por *necesidad* (sectores periféricos) de aquellas por *oportunidad* (anillo comercial/central) y las zonas de baja tasa por *bienestar* (sector oriente).
+
+2.  **Mapa de Hacinamiento:** Muestra el patrón clásico de **desigualdad socio-espacial**, con el hacinamiento más alto concentrado en la periferia y los niveles más bajos en el sector de mayores recursos.
+
+La observación de estos mapas sienta las bases para entender cómo estas dos distribuciones, aunque interrelacionadas, interactúan para crear la **Doble Vulnerabilidad** analizada en el mapa bivariado posterior.
+
+```{r mapasindividuales, echo=TRUE, message=FALSE, warning=FALSE}
+cat("\nGenerando mapas individuales...\n")
+# Mapa 1: % Adultos mayores que trabajan
+map_trabajo <- ggplot(sf_mapa) +
+  geom_sf(aes(fill = porc_am_trabajando), color = "white", size = 0.05) +
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "%",
+    limits = limites_trabajo,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Adultos Mayores que Trabajan (65+ años)",
+    subtitle = "% que trabajó por un pago la semana pasada"
+  ) +
+  theme_void() + theme(plot.title = element_text(face = "bold"))
+
+# Mapa 2: % Hacinamiento en hogares con AM
+map_hacinamiento <- ggplot(sf_mapa) +
+  geom_sf(aes(fill = porc_hacinamiento_am), color = "white", size = 0.05) +
+  scale_fill_viridis_c(
+    option = "viridis",
+    name = "%",
+    limits = limites_hacinamiento,
+    na.value = "grey90"
+  ) +
+  labs(
+    title = "Hacinamiento en Hogares con Adultos Mayores",
+    subtitle = "% de hogares con AM en viviendas con hacinamiento"
+  ) +
+  theme_void() + theme(plot.title = element_text(face = "bold"))
+```
+
+### 2.1.8 Gráfico de Dispersion
+
+Antes de la representación cartográfica final, se recurrió al **Gráfico de Dispersión** para visualizar la **estructura de la relación** entre la Persistencia Laboral y el Hacinamiento a nivel de zona censal. Este análisis estadístico permite confirmar si existe una correlación lineal positiva o negativa, o si, por el contrario, las variables se comportan de manera independiente. Mediante la segmentación del espacio de datos en cuatro cuadrantes (utilizando la **mediana** como umbral para ambos indicadores), este gráfico se convierte en la base analítica para entender:
+
+1.  La **densidad de las zonas** que caen en la categoría de **Doble Vulnerabilidad** (Alto Trabajo y Alto Hacinamiento).
+
+2.  La proporción de zonas que exhiben la **paradoja de la Persistencia Laboral** (donde la alta necesidad de trabajar convive con la escasez de oportunidades).
+
+La interpretación de estos cuadrantes es la justificación estadística que antecede y sustenta la clasificación cromática del mapa bivariado.
+
+```{r graficodispers, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Generando gráfico de dispersión...\n")
+sf_mapa$cuadrante <- with(sf_mapa, ifelse(
+  porc_am_trabajando >= mediana_trabajo & porc_hacinamiento_am >= mediana_hacinamiento,
+  'Q1: Alto trabajo / Alto hacinamiento',
+  ifelse(porc_am_trabajando >= mediana_trabajo & porc_hacinamiento_am < mediana_hacinamiento,
+         'Q2: Alto trabajo / Bajo hacinamiento',
+         ifelse(porc_am_trabajando < mediana_trabajo & porc_hacinamiento_am < mediana_hacinamiento,
+                'Q3: Bajo trabajo / Bajo hacinamiento',
+                'Q4: Bajo trabajo / Alto hacinamiento'))))
+
+grafico_dispersion <- ggplot(sf_mapa, aes(x = porc_am_trabajando, y = porc_hacinamiento_am)) +
+  geom_point(aes(color = cuadrante), size = 1.5, alpha = 0.7) +
+  geom_vline(xintercept = mediana_trabajo, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = mediana_hacinamiento, linetype = "dashed", color = "red") +
+  labs(x = "% Adultos Mayores que Trabajan", y = "% Hacinamiento en Hogares con AM",
+       title = "Dispersión: Trabajo vs Hacinamiento en Adultos Mayores", color = "Cuadrante") +
+  theme_minimal()
+
+```
+
+### 2.1.9 Mapa Bivariado
+
+El **Mapa Bivariado** es la pieza central del análisis geoespacial, ya que supera las limitaciones de las visualizaciones univariadas al representar la **convergencia espacial de dos dimensiones de vulnerabilidad** en una sola capa cartográfica. Utilizando la matriz $3 \times 3$ definida por los cuantiles de ambos indicadores, este mapa permite al lector identificar inmediatamente los cuatro escenarios clave de riesgo social a nivel de zona censal. Se enfatiza la visualización de los ***clusters*** **de "Doble Vulnerabilidad"** (Alto Hacinamiento y Alta Persistencia Laboral), que señalan las áreas con el mayor riesgo acumulado. Además, el mapa es esencial para interpretar la **paradoja laboral** en el territorio, localizando de forma precisa dónde coexisten la precariedad habitacional extrema y la baja oportunidad económica, proveyendo así la base empírica para la focalización de las estrategias de **ordenamiento territorial**.
+
+```{r mapabivariado, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Generando mapa bivariado optimizado (Ajustes de tamaño de etiquetas y leyenda)...\n")
+# Crear clasificación bivariada
+sf_mapa_bi <- bi_class(sf_mapa, 
+                       x = porc_hacinamiento_am, 
+                       y = porc_am_trabajando, 
+                       dim = 3, 
+                       style = "quantile")
+
+# Filtrar comunas para el mapa (manteniendo la solución anterior)
+comunas_a_eliminar <- c("LO BARNECHEA", "PUDAHUEL") 
+sf_comunas_filtradas <- sf_comunas %>% filter(!nom_comuna %in% comunas_a_eliminar)
+sf_centroides_filtrados <- sf_comunas_centroides %>% filter(!nom_comuna %in% comunas_a_eliminar)
+
+# Crear el mapa bivariado
+mapa_bivariado <- ggplot() +
+  
+  # 1. Capa base: zonas censales bivariadas (color = NA elimina líneas divisorias)
+  geom_sf(data = sf_mapa_bi, aes(fill = bi_class), color = NA, size = 0.05) +
+  
+  # 2. Capa de bordes de comunas (USA EL OBJETO FILTRADO)
+  geom_sf(data = sf_comunas_filtradas, fill = NA, color = "black", size = 0.3, alpha = 0.5) +
+  
+  # 3. Etiquetas de comunas centradas (AJUSTE CLAVE: size = 2.0)
+  geom_sf_text(data = sf_centroides_filtrados, 
+               aes(label = nom_comuna), 
+               size = 2.0, # Reducido de 2.5 a 2.0
+               color = 'black', 
+               fontface = 'bold') +
+  
+  bi_scale_fill(pal = 'DkBlue', dim = 3) +
+  labs(title = "Doble Vulnerabilidad en Adultos Mayores: Distribución Urbana",
+       subtitle = "Hacinamiento vs. Persistencia Laboral (65+ años) - Provincia de Santiago") +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5, face = 'bold', size = 14),
+        plot.subtitle = element_text(hjust = 0.5, size = 11),
+        plot.caption = element_text(hjust = 0.95, face = "italic"))
+
+# Leyenda (AJUSTES CLAVE: size de texto y posición)
+leyenda_bivariada <- bi_legend(
+  pal = 'DkBlue', 
+  dim = 3,
+  xlab = '+ Hacinamiento', 
+  ylab = '+ Trabajo',
+  size = 5 # Reducido de 6 a 5 para el texto de la leyenda
+)
+
+# Composición final (Ajuste de posición de la leyenda en el plot)
+mapa_final <- cowplot::ggdraw() +
+  cowplot::draw_plot(mapa_bivariado, x = 0, y = 0, width = 1, height = 1) +
+  # Ajuste de x e y para la leyenda
+  cowplot::draw_plot(leyenda_bivariada, x = 0.78, y = 0.1, width = 0.2, height = 0.2) 
+
+cat("✓ Bloque del Mapa Bivariado (Punto 9) ajustado para etiquetas y leyenda.\n")
+
+```
+
+### 2.1.10 Análisis de patrones espaciales
+
+Una vez generado y estabilizado el Mapa Bivariado, el análisis se centra en la **interpretación de los patrones espaciales** y la **identificación precisa de los *clusters* de riesgo** definidos por la convergencia de las dos variables. Esta sección busca ir más allá de la mera descripción para **caracterizar** las zonas censales que concentran la **Doble Vulnerabilidad** (especialmente los cuadrantes 2-3 y 3-3), entendiendo que estos son los territorios con el mayor riesgo acumulado. Además, es crucial analizar la distribución de los cuadrantes atípicos para confirmar y desglosar la **paradoja de la Persistencia Laboral**, revelando dónde la necesidad de trabajar se encuentra con la escasez de oportunidades, un hallazgo clave para el diseño de políticas públicas diferenciadas
+
+```{r analisispatrones, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Analizando patrones espaciales...\n")
+zonas_criticas <- sf_mapa_bi %>%
+  st_drop_geometry() %>%
+  filter(bi_class %in% c('3-3', '3-2', '2-3')) %>%
+  select(geocodigo, nom_comuna, porc_am_trabajando, porc_hacinamiento_am, bi_class) %>%
+  arrange(desc(porc_am_trabajando + porc_hacinamiento_am))
+
+cat("\n=== ZONAS CON DOBLE VULNERABILIDAD ===\n")
+print(head(zonas_criticas, 10))
+```
+
+## 2.2 Resultados
+
+### 2.2.1 Visualización 
+
+```{r visualizacion, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Mostrando resultados...\n")
+print(map_trabajo)
+
+
+```
+
+El primer mapa temático, que grafica la **Tasa de Empleo en Adultos Mayores (**AM), revela un patrón geográfico complejo que desafía una interpretación lineal basada únicamente en la vulnerabilidad económica. En lugar de mostrar la mayor tasa de trabajo exclusivamente en las zonas de mayor pobreza, el mapa evidencia una **paradoja territorial** que debe ser analizada desde la óptica de la **oportunidad** y las **barreras estructurales**.
+
+### 1. Ausencia y Baja Persistencia Laboral (Zonas de Bienestar y Barrera)
+
+El patrón de **baja o nula Persistencia Laboral** (colores **morado oscuro a negro**, y áreas en **gris/blanco**) se manifiesta en dos contextos totalmente opuestos:
+
+-   **Zonas de Alto Bienestar (Elipse Oriente):** Existe una marcada **ausencia de** $\text{AM}$ trabajando en las zonas censales más acomodadas del sector oriente (e.g., gran parte de Vitacura, Las Condes y Providencia, así como focos en Ñuñoa). Esta baja tasa se interpreta como un **indicador de seguridad económica**. La población $\text{AM}$ residente aquí posee **altas pensiones y patrimonio**, lo que elimina la necesidad de participar en el mercado laboral remunerado.
+
+-   **Zonas Periféricas y Complejas (Anillo Oscuro Externo):** La presencia de zonas con baja Tasa de Empleo en la periferia (e.g., focos en el sector poniente y el sur) es lo que constituye la principal paradoja. En estas áreas, donde la necesidad económica es presumiblemente alta, la baja tasa sugiere que la población $\text{AM}$ enfrenta **severas barreras al trabajo**. Esto se puede atribuir a:
+
+    -   **Escasez de Oportunidades Locales:** Poca o nula oferta de nichos laborales accesibles (servicios, conserjería, comercio informal) en el entorno inmediato.
+
+    -   **Condiciones de Salud:** Un deterioro físico más pronunciado en este grupo etario, impuesto por las desigualdades en el acceso a la salud, que impide la prolongación de la vida laboral.
+
+En este contexto, la baja tasa de empleo en la periferia **no es un indicador de bienestar, sino de una limitación estructural y ausencia de opciones**.
+
+### 2. Alta Persistencia Laboral (Zonas de Oportunidad y Subsistencia)
+
+Las zonas con **alta Tasa de Empleo** (colores **cálidos, naranja a amarillo**) se concentran principalmente en el **anillo central y su proyección hacia el oriente y sur**, señalando la confluencia de necesidad y oportunidad:
+
+-   **Núcleo Comercial y Servicios (Sector Central-Oriente):** Las tasas más altas se observan en las comunas centrales (Santiago, Recoleta, Independencia) y las vías que conectan con el oriente. Esta concentración se explica por una **mezcla de factores**:
+
+    -   **Acceso a Nichos Laborales:** Alta demanda de **trabajos de servicios** (seguridad, comercio, microempresas, cuidado) que dan cabida al $\text{AM}$.
+
+    -   **Buen Estado de Salud y Capital Humano:** $\text{AM}$ que, debido a un mejor estado de salud o la mantención de negocios/empleos formales de larga data, son capaces de seguir generando ingresos.
+
+-   **Periferia de Subsistencia:** En los focos más cálidos de la periferia sur (e.g., partes de La Pintana y El Bosque), la alta tasa de empleo se interpreta como una **necesidad crítica de subsistencia**, donde el AM debe trabajar por la insuficiencia de la pensión.
+
+En conclusión, este mapa requiere una lectura dual: la **baja tasa en el oriente refleja seguridad**, mientras que la **baja tasa en la periferia compleja sugiere barreras y exclusión**. La alta tasa, por su parte, es un reflejo de los territorios donde la oportunidad de empleo *existe* para mitigar la necesidad económica.
+
+```{r mapahacinamiento, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Mostrando resultados...\n")
+print(map_hacinamiento)
+```
+
+A diferencia de la complejidad del mapa de Persistencia Laboral, la distribución del **Hacinamiento en Hogares con** $\text{AM}$ (que mide la proporción de hogares con hacinamiento medio, alto o crítico) exhibe un patrón de **centro-periferia y riqueza-pobreza** clásico y bien definido. Este patrón valida la premisa de que la calidad de la vivienda es un indicador robusto de la desigualdad territorial.
+
+### 1. Zonas de Bajo Hacinamiento (Indicador de Bienestar Habitacional)
+
+El patrón de **Bajo Hacinamiento** (colores **morado oscuro** a **azul**) se concentra de forma dominante en el **cono de alta renta de Santiago**, lo que indica que en estas zonas los adultos mayores gozan de mejores condiciones de espacio y calidad de vida:
+
+-   **Sector Oriente Consolidado:** Se observan amplios manchones de color oscuro en comunas como **Vitacura, Las Condes, Providencia, Ñuñoa y La Reina**. Estas áreas se caracterizan por una mayor disponibilidad de metros cuadrados por persona, un mercado inmobiliario de mayor valor y, por ende, un menor riesgo de precariedad habitacional para la población senior.
+
+-   **Focos Acomodados:** Los porcentajes más bajos también se extienden a focos de barrios de ingresos medios y altos en comunas como **La Florida Alta** o **Peñalolén** (hacia la cordillera), donde la capacidad de adquirir o mantener viviendas amplias es mayor.
+
+### 2. Zonas de Alto Hacinamiento (Concentración de Déficit Habitacional)
+
+El patrón de **Alto Hacinamiento** (colores **verde** a **amarillo**) se agrupa sistemáticamente en la **periferia y las comunas de menor ingreso**, demostrando una acumulación crítica de déficit habitacional.
+
+-   **Clusteres Críticos en la Periferia Sur:** Las tasas más altas, cercanas o superiores al 10%, se observan en amplios sectores de comunas del **sur**, como **La Pintana** y **San Ramón**, lo que indica que el problema de la vivienda afecta de manera desproporcionada a los hogares con población $\text{AM}$ en esta zona.
+
+-   **Focos en el Norponiente:** La precariedad también es notoria en el sector **norponiente**, con altas tasas en comunas como **Quilicura** y **Renca**.
+
+-   **Efecto de las Zonas Centrales en Transición:** El hacinamiento también aparece en focos de comunas centrales como **Santiago y Estación Central**, lo que puede estar asociado a la alta densidad, los problemas de sobreutilización de viviendas y, en algunos casos, el impacto de la migración y la convivencia intergeneracional forzada por el alto costo de la vida.
+
+En conclusión, el mapa de Hacinamiento funciona como un claro **termómetro de la desigualdad estructural de Santiago**. Su distribución predecible contrasta fuertemente con la complejidad del mapa de Persistencia Laboral, preparando la base para un análisis bivariado que revele dónde se superponen estas dos formas de exclusión.
+
+```{r graficodispersion, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Mostrando resultados...\n")
+print(grafico_dispersion)
+```
+
+El Gráfico de Dispersión utiliza la **mediana** de ambas variables como umbrales (líneas rojas punteadas: 24% para Persistencia Laboral y 5% para Hacinamiento) para segmentar el territorio en cuatro categorías de riesgo. Este análisis es fundamental, ya que ofrece la **evidencia estadística** de la distribución de la doble vulnerabilidad antes de su representación espacial.
+
+| Cuadrante | Etiqueta | Posicion | Implicancia |
+|----|----|----|----|
+| Q1 | Alto trabajo/Alto hacinamiento | Superior derecha (puntos rojos) | **DOBLE VULNERABILIDAD EXTREMA.** Riesgo económico + Riesgo habitacional. **Máxima Urgencia.** |
+| Q2 | Alto trabajo/Bajo hacinamiento | Inferior derecha (puntos verdes) | **VULNERABILIDAD ECONÓMICA.** Alta necesidad de trabajar, pero con condiciones de vivienda adecuadas. |
+| Q3 | Bajo trabajo/Bajo hacinamiento | Inferior izquierda (puntos celestes) | **BAJO RIESGO / ALTO BIENESTAR.** Adecuadas condiciones habitacionales y baja dependencia laboral. |
+| Q4 | Bajo trabajo/Alto hacinamiento | Superior izquierda (puntos morados) | **VULNERABILIDAD HABITACIONAL URGENTE.** Precariedad habitacional, aunque con baja Persistencia Laboral. |
+
+### Validación de la Paradoja Laboral (Vulnerabilidades Específicas)
+
+El gráfico es crucial para confirmar la complejidad de la Persistencia Laboral, contrastando la necesidad con la barrera de oportunidad:
+
+-   **Vulnerabilidad Económica Pura (Q2: Alto Trabajo / Bajo Hacinamiento ):** Este cuadrante es extenso y está ubicado en la parte inferior derecha. Agrupa zonas que han logrado asegurar condiciones de vivienda adecuadas (- Hacinamiento), pero donde los Adultos Mayores ($\text{AM}$) están **altamente obligados a permanecer activos laboralmente** (+ Empleos). Este es el *cluster* que refleja la subsistencia, probablemente en el anillo comercial y de servicios de la ciudad.
+
+-   **Vulnerabilidad Habitacional (Q4: Bajo Trabajo / Alto Hacinamiento):** Este cuadrante, ubicado en la parte superior izquierda, es la **evidencia clave de la Paradoja Laboral**. Contiene una cantidad significativa de zonas con **Alto Hacinamiento** ($\uparrow$ Precariedad habitacional) que, a pesar de su alta vulnerabilidad, reportan **Baja Persistencia Laboral** (-Empleo). Este *cluster* respalda la hipótesis de que, en las áreas más pobres, la baja tasa de empleo no es un indicador de bienestar, sino el resultado de **barreras estructurales severas**, como la falta de ofertas de trabajo accesible o las condiciones de salud deterioradas de la población senior.
+
+En resumen, el gráfico de dispersión confirma que la vulnerabilidad social en la vejez en Santiago se manifiesta en tres formas críticas (Q1, Q2 y Q4), siendo **Q1** (Doble Vulnerabilidad Extrema) el escenario de máxima urgencia para la focalización de políticas.
+
+```{r mapafinal, echo=TRUE, message=FALSE, warning=FALSE}
+cat("Mostrando resultados...\n")
+print(mapa_final)
+```
+
+El **Mapa Bivariado** representa la culminación del análisis geoespacial, visualizando la convergencia de la **Persistencia Laboral** y el **Hacinamiento**. La distribución cromática revela que la vulnerabilidad en la vejez es un fenómeno profundamente segregado y multidimensional en la Provincia de Santiago.
+
+**El Cluster de Máximo Riesgo: Doble Vulnerabilidad (Clase 3-3, Azul Oscuro)**
+
+Las zonas censales clasificadas con Doble Vulnerabilidad Extrema **(bi_class 3-3)**, que combinan **Alto Hacinamiento** y **Alta Persistencia Laboral**, representan los territorios con la mayor acumulación de riesgo.
+
+-   **Localización:** Este *cluster* se concentra de manera nítida en el **extremo sur** de la provincia, con la mayor densidad en **La Pintana**, y focos importantes en **San Ramón** y **El Bosque**. En el **sector norponiente**, comunas como **Quilicura** también exhiben esta condición crítica.
+
+-   **Interpretación:** Estas áreas son la manifestación más urgente del riesgo social, donde el $\text{AM}$ se ve forzado a trabajar por subsistencia y, al mismo tiempo, reside en viviendas con precariedad espacial. Esto requiere una **intervención dual** (ingresos + vivienda).
+
+**La Vulnerabilidad Económica Pura (Clase 1-3, Morado Oscuro)**
+
+Este patrón combina **Bajo Hacinamiento** con **Alta Persistencia Laboral**. Aunque la calidad de la vivienda es adecuada, la **presión económica es alta**.
+
+-   **Localización:** Este patrón domina el **anillo central-norte**, concentrándose en **Recoleta, Independencia, el centro de Santiago y la parte baja de Providencia**. Focos en **Las Condes** también sugieren $\text{AM}$ con alto capital humano que se mantienen activos.
+
+-   **Alineación con la Paradoja:** Esta es la zona donde la **oportunidad de empleo senior** es más accesible (servicios, comercio). La persistencia laboral aquí se interpreta como una necesidad alta que ha logrado ser mitigada por la disponibilidad de trabajos.
+
+**El Triángulo de Bienestar (Clase 1-1, Gris Claro)**
+
+El patrón de **Alto Bienestar/Bajo Riesgo** (Bajo Hacinamiento y Baja Persistencia Laboral) se localiza claramente en el **sector oriente consolidado** (**Vitacura, Las Condes, Providencia y Ñuñoa**). Este resultado valida la **segregación territorial de la riqueza**, donde la seguridad económica elimina la necesidad de trabajar y garantiza la calidad habitacional.
+
+**Evidencia de la Barrera de Oportunidad (Vulnerabilidad Habitacional)**
+
+El mapa ofrece evidencia tangible para la **paradoja de la Persistencia Laboral** y las barreras de oportunidad:
+
+-   **Vulnerabilidad Habitacional (Clases 3-1, 3-2; Turquesa):** Estas clases, que muestran Alto Hacinamiento con Persistencia Laboral Baja o Media, se encuentran dispersas en el **sector poniente**, abarcando **Renca** y **Cerro Navia**.
+
+    -   **Implicación:** En estas comunas, la alta necesidad de ingresos existe (indicada por la vulnerabilidad general y el hacinamiento), pero la **Tasa de Empleo es baja**. Esto respalda la hipótesis de que la población $\text{AM}$ enfrenta barreras estructurales o de salud que le impiden acceder a los pocos trabajos disponibles.
+
+**Heterogeneidad Intra-Comunal (Maipú y la Periferia)**
+
+La unidad de análisis a nivel de zona censal permite observar la heterogeneidad:
+
+-   **Maipú, La Florida y Peñalolén:** Estas comunas muestran un **mosaico de colores**, indicando una alta variabilidad interna. **Maipú**, por ejemplo, presenta sectores de Alto Bienestar (1-1) junto a focos de Vulnerabilidad Habitacional (3-1). **Peñalolén** y **La Florida** muestran un claro gradiente, desde el Bienestar (cercano al oriente) hacia la Doble Vulnerabilidad (hacia la periferia).
+
+Este análisis bivariado es fundamental para entender que la vulnerabilidad en la vejez en Santiago es un fenómeno geográficamente complejo, donde la **ausencia de oportunidad** se vuelve tan peligrosa como la **necesidad económica**.
+
+### 2.2.2 Guardar resultados y cerrar conexión
+
+La etapa final del flujo metodológico se enfoca en la **trazabilidad** y la **preservación de los resultados** del análisis geoespacial. Este proceso asegura la replicabilidad del estudio al incluir el guardado de todas las visualizaciones cartográficas generadas (mapas univariados y bivariado), la tabla de las zonas críticas identificadas (`zonas_doble_vulnerabilidad.csv`), y la desconexión segura de la base de datos PostgreSQL. Este cierre formaliza la finalización del procesamiento y facilita la consulta de los productos clave para futuras investigaciones o instancias de política pública.
+
+```{r}
+cat("Guardando resultados...\n")
+ggsave("mapa_trabajo_am.png", map_trabajo, width = 10, height = 8, dpi = 300, bg = "white")
+ggsave("mapa_hacinamiento_am.png", map_hacinamiento, width = 10, height = 8, dpi = 300, bg = "white")
+ggsave("grafico_dispersion.png", grafico_dispersion, width = 10, height = 8, dpi = 300, bg = "white")
+ggsave("mapa_bivariado_final_optimizado.png", mapa_final, width = 12, height = 8, dpi = 300, bg = "white") 
+write.csv(zonas_criticas, "zonas_doble_vulnerabilidad.csv", row.names = FALSE, fileEncoding = "UTF-8")
+-----------------------------------------------------------------------------
+# 13. CERRAR CONEXIÓN ---------------------------------------------------------
+#-----------------------------------------------------------------------------
+
+dbDisconnect(con)
+cat("✓ Conexión cerrada\n")
+
+#------------------------------------------------------------------------------
+# 14. RESUMEN FINAL -----------------------------------------------------------
+#------------------------------------------------------------------------------
+
+cat("\n=== ANÁLISIS COMPLETADO ===\n")
+cat("Archivos generados:\n")
+cat("- mapa_trabajo_am.png\n")
+cat("- mapa_hacinamiento_am.png\n")
+cat("- grafico_dispersion.png\n")
+cat("- mapa_bivariado_final_optimizado.png\n")
+cat("- zonas_doble_vulnerabilidad.csv\n")
+cat("\nTotal zonas analizadas:", nrow(sf_mapa), "\n")
+cat("Zonas con doble vulnerabilidad:", nrow(zonas_criticas), "\n")
+
+cat("\n¡Proceso completado exitosamente! 🎉\n")
+```
+
+-------------------------------------------
+
+# 3.Conclusión
+
+Este estudio culmina exitosamente el **Objetivo General** de mapear la Doble Vulnerabilidad en adultos mayores, validando la metodología geoespacial como una herramienta **sumamente potente y precisa** para el análisis social.
+
+-   **Impacto Académico:** Como trabajo de iniciación, la capacidad de procesar grandes volúmenes de información desde el **CENSO 2017**, realizar consultas geoespaciales robustas en PostgreSQL y ejecutar análisis bivariados complejos en R, demuestra el dominio de una ruta metodológica esencial para la Inteligencia de Datos Geoespaciales y la Ingeniería en Geografía.
+
+-   **Valor Micro-Territorial:** El uso de la **zona censal urbana** como unidad de análisis fue crucial. Permitió superar la visión agregada a nivel comunal y revelar la **heterogeneidad intra-comunal**, identificando focos de vulnerabilidad al nivel de barrio, lo que es invaluable para la focalización de recurso
+
+El análisis bivariado no solo confirmó la segregación socioespacial de Santiago, sino que también desentrañó la **paradoja de la Persistencia Laboral**.
+
+#### Segregación y Máxima Urgencia (Macro-Nivel)
+
+El patrón más robusto es la **segregación territorial de la vulnerabilidad**.
+
+-   **Foco Crítico:** El **cluster de Doble Vulnerabilidad** (Alto Hacinamiento y Alta Persistencia Laboral, bi_class 3-3) se concentra mayoritariamente en el **sector sur** de la Provincia de Santiago, con especial intensidad en comunas como **La Pintana, El Bosque y San Ramón**, y focos en **Quilicura** al norte. Estas comunas requieren el mayor énfasis en la intervención social y habitacional.
+
+-   **Contraste de Bienestar:** En el polo opuesto, el **Triángulo de Bienestar (bi_class 1-1)** domina el sector oriente (Vitacura, Las Condes), confirmando que la seguridad económica y habitacional en la vejez está estrictamente ligada a la ubicación territorial.
+
+#### La Paradoja de la Oportunidad (Micro-Nivel)
+
+La interpretación de la Persistencia Laboral reveló la existencia de barreras estructurales y la dependencia de nichos laborales:
+
+-   **Vulnerabilidad por Barrera:** La presencia de zonas con **Alto Hacinamiento** y **Baja Persistencia Laboral (bi_class 3-1)** en comunas vulnerables (como **Renca** y **Cerro Navia**) valida la hipótesis de la escasez de oportunidades. El bajo porcentaje de $\text{AM}$ trabajando aquí no es por seguridad económica, sino por el **deterioro de la salud** o la **ausencia de ofertas de empleo accesible**, representando una exclusión total del sistema.
+
+-   **Vulnerabilidad por Subsistencia:** El **anillo central** (Santiago, Recoleta), clasificado como **Vulnerabilidad Económica Pura (bi_class 1-3)**, evidencia que la Alta Persistencia Laboral es una **necesidad constante** que se mitiga gracias a la presencia de oportunidades de empleo en el sector de servicios.
+
+Los resultados son una llamada a la acción para las políticas públicas, indicando que las soluciones deben ser geográficamente diferenciadas:
+
+-   **Focos de Acción Prioritaria:** Las comunas del sur requieren una **intervención dual y urgente** que ataque simultáneamente el déficit habitacional y el ingreso senior.
+
+-   **Diseño de Políticas:** Este mapa permite a las entidades de planificación poner los focos de acción no solo en la vivienda (programas de densificación o subsidios habitacionales), sino también en la **creación de capital social y empleabilidad senior** específica en los territorios de máxima necesidad.
+
+Para complementar y entender mejor estos patrones, futuras investigaciones deberían enfocarse en:
+
+-   **Cruce con Datos de Salud:** Correlacionar la Persistencia Laboral con indicadores de morbilidad o discapacidad para validar la hipótesis de las **barreras de salud** en la periferia.
+
+-   **Movilidad Laboral:** Investigar la proporción de adultos mayores que **trabajan fuera de su comuna de residencia** (movilidad pendular) para comprender mejor si la baja tasa de empleo en la periferia se debe a la ausencia de puestos o a la incapacidad de viajar al centro.
+
+-   **Series de Tiempo:** Utilizar censos futuros o encuestas de caracterización socioeconómica para medir la **evolución** de esta doble vulnerabilidad a lo largo del tiempo.
+
+------------------------------------------
+
+# 4.Bibliografía
+
+-   Organización Internacional del Trabajo. (2023, 11 de enero). Chile: personas mayores trabajan principalmente de manera informal y por bajos ingresos. Oficina de la OIT para el Cono Sur de América Latina. Recuperado de [**https://chile.un.org/es/215082-chile-personas-mayores-trabajan-principalmente-de-manera-informal-y-por-bajos-ingresos**](https://chile.un.org/es/215082-chile-personas-mayores-trabajan-principalmente-de-manera-informal-y-por-bajos-ingresos)
+
+-   Ministerio de Desarrollo Social y Familia. (2022). Índice de Prioridad Social de Comunas 2022. Recuperado de [**https://www.desarrollosocialyfamilia.gob.cl/storage/docs/INDICE-DE-PRIORIDAD-SOCIAL-2022_V2.pdf**](https://www.desarrollosocialyfamilia.gob.cl/storage/docs/INDICE-DE-PRIORIDAD-SOCIAL-2022_V2.pdf)
+
+-   Instituto Nacional de Estadísticas (INE). (2017). Censo de Población y Vivienda 2017. Recuperado de [**https://www.censo2017.cl**](https://www.censo2017.cl/)
+
+-   Ministerio de Vivienda y Urbanismo (MINVU). (2023, 31 de mayo). Censo Vivienda 2024: Cae el hacinamiento a su menor nivel en dos décadas. Centro de Estudios MINVU. Recuperado de [**https://centrodeestudios.minvu.gob.cl/censo-vivienda-2024-cae-el-hacinamiento-a-su-menor-nivel-en-dos-decadas/**](https://centrodeestudios.minvu.gob.cl/censo-vivienda-2024-cae-el-hacinamiento-a-su-menor-nivel-en-dos-decadas/)
+
+-   Ministerio de Vivienda y Urbanismo (MINVU). (2023, 31 de mayo). Censo 2024: Comunas del país muestran importante crecimiento del parque habitacional y envejecimiento acelerado de la población. Centro de Estudios MINVU. Recuperado de [**https://centrodeestudios.minvu.gob.cl/censo-2024-comunas-del-pais-muestran-importante-crecimiento-del-parque-habitacional-y-envejecimiento-acelerado-de-la-poblacion/**](https://centrodeestudios.minvu.gob.cl/censo-2024-comunas-del-pais-muestran-importante-crecimiento-del-parque-habitacional-y-envejecimiento-acelerado-de-la-poblacion/)
+
+-------------------------------------
