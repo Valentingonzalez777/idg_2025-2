@@ -1,0 +1,622 @@
+---
+title: "Trabajo 2: Microsimulación Espacial con rakeR"
+subtitle: "Doble Vulnerabilidad Sanitaria y Económica: Análisis Bivariado de Obesidad/Sobrepeso e Ingreso Percápita en el Gran Santiago"
+author: "Valentin Gonzalez"
+date: "03/11/2025"
+output: html_document
+---
+
+# 1.Introducción
+
+La planificación territorial efectiva requiere datos a nivel micro-local. Las encuestas por muestreo como **CASEN** ofrecen información detallada sobre el estado nutricional y socioeconómico, pero carecen de la granularidad espacial necesaria. Este trabajo aborda esta limitación utilizando la **Microsimulación Espacial (`rakeR`)** para **conectar** la información de **CASEN 2022** con la estructura poblacional del **CENSO 2017**, permitiendo desagregar la **Tasa de Sobrepeso u Obesidad** a nivel de Zona Censal
+
+La integración de ambas fuentes permite identificar los **clusters de Doble Vulnerabilidad** al contrastar el riesgo sanitario (Obesidad) con el riesgo económico (Ingreso Percápita microsimulado en clases), un insumo esencial para la política pública intersectorial.
+
+## 1.1. Objetivo General e Hipótesis
+
+Realizar la conexión metodológica entre la Encuesta CASEN 2022 y el CENSO 2017 para **estimar y desagregar la Tasa de Sobrepeso u Obesidad** a nivel de Zona Censal, aportando información espacial para territorios que carecen de observaciones directas.
+
+La hipotesis se basa en que la Tasa de Sobrepeso/Obesidad exhibirá una correlación espacial negativa con el Ingreso Percápita ($\mathbf{X}$). Los clusters de **Alta Obesidad** se concentrarán en las Zonas Censales con **Bajo Ingreso**, validando la segregación socioespacial de la salud.
+
+## 1.2 Objetivos Específicos
+
+-   Implementar correctamente el procedimiento de microsimulación utilizando el paquete `rakeR`, ajustando el flujo para alinear la muestra de CASEN con los márgenes del CENSO.
+
+-   Generar un **producto cartográfico bivariado** que integre la tasa de Obesidad estimada con la microsimulación de Ingreso Percápita, visualizando la concentración de Doble Vulnerabilidad.
+
+-   Analizar y validar los patrones espaciales resultantes, identificando la coherencia de los clusters de riesgo sanitario y económico con la segregación socioespacial del Gran Santiago.
+
+# 2.Desarrollo
+
+## 2.1 Metodología de simulación y Discusión
+
+El análisis se centra en la transferencia de la variable S2- ¿Cual es su estado nutricional? haciendo enfasis en la orientacion hacia personas con sobrepeso/obesidad (valores 3 y 4), desde la **CASEN** a la estructura de control del **CENSO** a través de variables de control **Edad, Escolaridad y Sexo**.
+
+|  |  |  |  |  |
+|---------------|---------------|---------------|---------------|---------------|
+| **Nombre variable** | **Etiqueta de variable** | **Valores** | **Etiquetas de valores** | **Frecuencia** |
+| s2 | s2. ¿Cuál es el estado nutricional? | -88 | No sabe | 103 |
+| 1 | 1\. Desnutrido o en riesgo de desnutrición | 298 |  |  |
+| 2 | 2\. Normal | 17.788 |  |  |
+| 3 | 3\. Sobrepeso | 3.234 |  |  |
+| 4 | 4\. Obeso | 467 |  |  |
+
+## 2.2 Discusión critica y solucion de la Incompatibilidad Metodológica
+
+El mayor obstáculo fue el **conflicto de universos** Obtenido de la CASEN: Adultos +18 y lo esperado por el CENSO: Población Total.
+
+-   **El Fallo (\`NA\`s y Weight Populations)**: El universo de la variable [S2] solo incluye adultos, dejando [NA]s masivos en la muestra (niños y no respondentes). El algoritmo \`rakeR\` falla si la matriz de control (CENSO) espera 6 millones de personas y la muestra de (Y) no tiene un valor para todos.
+
+-   **Solución de Ejecución:** Para **garantizar la convergencia** (un requisito del entregable) y resolver el conflicto de universos, se optó por la estrategia de **imputación a cero** sugerida por el profesor precisamente con {S2}-(No respondida o Menor de edad)
+
+**Limitación Metodológica:** Esta solución sesga la tasa estimada hacia abajo, ya que asume que todos los {NA}s (incluyendo 2 millones de niños) son "No Obesos". El mapa resultante es, por lo tanto, una representación de la **distribución relativa del riesgo** y no de su magnitud absoluta.
+
+## 2.3 Implementación en Rstudio
+
+A continuación, se presenta la secuencia completa de comandos en R y SQL, que materializa la microsimulación. Esta etapa inicia con la **conexión de las librerías especializadas** y la **carga de los microdatos** ($\text{CASEN}$) y los **márgenes de control** ($\text{CENSO}$). El bloque es crucial para la trazabilidad y garantiza que los *data frames* de entrada (`casen_raw` y `cons_censo_df`) se carguen y se estandaricen, resolviendo problemas de nomenclatura y tipado, lo cual es fundamental antes de iniciar cualquier manipulación estadística o geográfica.
+
+### 2.3.1. Carga de Librerías y Preparación de Entradas
+
+Este bloque establece el ambiente de trabajo, cargando los paquetes necesarios (incluyendo `rakeR` para la simulación y `sf`/`biscale` para la cartografía) y los archivos RDS proporcionados. Se incluye la **corrección de estandarización** de los nombres de las columnas del $\text{CENSO}$ (ej., forzando mayúsculas y tipos de datos) para asegurar la coherencia del proceso.
+
+```{r Librerías, echo=TRUE, message=FALSE, warning=FALSE}
+
+
+## 1. Librerías y Carga de Entradas ####
+library(rakeR)
+library(RPostgres)
+library(DBI)
+library(sf)
+library(dplyr)
+library(data.table) 
+library(ggplot2)
+library(viridis) 
+library(scales) 
+library(sf)
+library(biscale)
+library(cowplot)
+
+
+# Rutas de los archivos de microdatos y márgenes
+ruta_casen = "data/casen_rm.rds"
+ruta_censo = "data/cons_censo_df.rds" # Usaremos la ruta original de la clase para que el profesor lo corra
+
+# Carga de los Data Frames
+casen_raw = readRDS(ruta_casen)
+cons_censo_df = readRDS(ruta_censo)
+
+
+# === ALINEACIÓN CRÍTICA DEL DATA FRAME DE MÁRGENES (CENSO) ===
+# Forzamos la estandarización para evitar el error de tipado en las claves de unión.
+
+names(cons_censo_df) <- toupper(names(cons_censo_df))
+cons_censo_df$GEOCODIGO <- as.character(cons_censo_df$GEOCODIGO) 
+cons_censo_df$COMUNA <- as.character(cons_censo_df$COMUNA) 
+
+```
+
+### 2.3.2 Pre-procesamiento y Estandarización
+
+El pre-procesamiento es la etapa metodológica más crítica de la microsimulación, ya que asegura que la **muestra de la encuesta CASEN** sea estadísticamente comparable y alineada con los **márgenes de control del CENSO**.
+
+Primero estan los margenes de control y y definicion de niveles, establece la **estructura poblacional esperada** por el rakeR. Se extraen los nombres de las columnas categóricas (`EDAD`, `ESCO`, `SEXO`) del $\text{CENSO}$ (`cons_censo_df`). Estos nombres definen los **niveles de factor** que la $\text{CASEN}$ debe replicar para que el algoritmo pueda crear la matriz de alineación. (Fragmento 2.1 del código)
+
+Luego viene la solucion de incompatibilidad de los microdatos. Esta sección se encarga de la limpieza de la muestra, la creación de la variable a microsimular **Y** y la aplicación de la **solución de imputación** para resolver el conflicto de universos ($\text{Adultos } \leftrightarrow \text{Población Total}$). El principal desafío fue que la variable $\mathbf{S2}$ (Obesidad) solo aplica a adultos, dejando un gran volumen {NA}s (niños y no respondentes) que el $\text{rakeR}$ rechazaría. La solución adoptada es la **imputación de ejecución**: se convierte a $\mathbf{0}$ (No Sobrepeso/Obeso) a todos los {NA}s, forzando la población de la $\text{CASEN}$ a ser compatible con la población total del $\text{CENSO}$ (Fragmento 2.2 del código)
+
+Luego viene la parte de recodificación de las variables de control (X). Estas variables continuas de la $\text{CASEN}$ ($\text{Edad}$ y $\text{Escolaridad}$) se transforman en **categorías discretas** para que coincidan exactamente con las columnas (`levels`) del $\text{CENSO}$. Esta alineación es **obligatoria** para que la matriz de pesos del $\text{rakeR}$ pueda calcularse sin errores de población. (Fragmento 2.3 del código)
+
+```{r preproces y estandarización, echo=TRUE, message=FALSE, warning=FALSE}
+## 2. PRE-PROCESAMIENTO Y ESTANDARIZACIÓN ####
+
+### 2.1 Márgenes de Control (CENSO)
+col_cons = sort(setdiff(names(cons_censo_df), c("GEOCODIGO", "COMUNA")))
+age_levels = grep("^EDAD", col_cons, value = TRUE)
+esc_levels = grep("^ESCO", col_cons, value = TRUE)
+sexo_levels = grep("^SEXO", col_cons, value = TRUE)
+
+### 2.2 Microdatos (CASEN) 
+
+vars_base = c("estrato", "esc", "edad", "sexo", "e6a", "s2") 
+casen = casen_raw[, vars_base, drop = FALSE]
+rm(casen_raw)
+
+# Limpieza inicial de variables
+casen$Comuna = substr(as.character(casen$estrato), 1, 5)
+casen$Comuna = as.character(casen$Comuna) # Forzar a carácter para el split
+casen$estrato = NULL
+casen$esc = as.integer(unclass(casen$esc))
+casen$edad = as.integer(unclass(casen$edad))
+casen$e6a = as.numeric(unclass(casen$e6a))
+casen$sexo = as.integer(unclass(casen$sexo))
+casen$s2 = as.numeric(unclass(casen$s2)) 
+casen$ID = as.character(seq_len(nrow(casen)))
+
+# Manejo de Valores Perdidos y Creación de la Variable Y
+casen$s2[casen$s2 == -88] = NA 
+
+# === 1. CREACIÓN DE LA VARIABLE BINARIA (Y) ===
+casen$tasa_sobrepeso_obeso = as.integer(casen$s2 %in% c(3, 4)) 
+
+# === 2. IMPUTACIÓN DE EJECUCIÓN (TAL COMO EN EL MODELO DEL PROFESOR) ===
+# Se asume que la falta de dato (menores, no respondieron) es un '0' para que el rakeR corra.
+casen$tasa_sobrepeso_obeso[is.na(casen$tasa_sobrepeso_obeso)] <- 0
+
+
+# Imputación de Escolaridad 
+idx_na = which(is.na(casen$esc))
+fit = lm(esc ~ e6a, data = casen[-idx_na,])
+pred = predict(fit, newdata = casen[idx_na, ,drop = FALSE])
+casen$esc[idx_na] = as.integer(round(pmax(0, pmin(29, pred))))
+
+# LIMPIEZA FINAL: Solo aseguramos que los controles no tengan NA's
+casen_clean = casen %>%
+  filter(!is.na(esc) & !is.na(sexo) & !is.na(edad))
+
+casen = casen_clean
+
+### 2.3 Recodificación de Variables de Control (X) - ALINEACIÓN DE FACTORES
+
+# 2.3.1. Categorización de Edad (X)
+# Se crea el factor Y se le asignan los niveles correctos
+casen$edad_cat = factor(
+  as.character(cut(
+    casen$edad,
+    breaks = c(0,30,40,50,60,70,80,Inf),
+    labels = age_levels,
+    right = FALSE, include.lowest = TRUE
+  )),
+  levels = age_levels # <--- CLAVE: Forzar los niveles del CENSO
+)
+
+
+# 2.3.2. Categorización de Escolaridad (X)
+# Se usa as.character para limpiar el factor antes de forzar los niveles del CENSO
+casen$esc_cat = factor(
+  as.character(with(casen,
+                    ifelse(esc == 0, esc_levels[1],
+                           ifelse(esc <= 8, esc_levels[2],
+                                  ifelse(esc <= 12, esc_levels[3],
+                                         esc_levels[4]))))),
+  
+  levels = esc_levels # <--- CLAVE: Forzar los niveles del CENSO
+)
+
+
+# 2.3.3. Recodificación de sexo (X)
+# Se usa as.character para limpiar el factor antes de forzar los niveles del CENSO
+casen$sexo_cat = factor(
+  as.character(ifelse(casen$sexo == 2, sexo_levels[1],
+                      ifelse(casen$sexo == 1, sexo_levels[2], NA))),
+  levels = sexo_levels # <--- CLAVE: Forzar los niveles del CENSO
+)
+
+```
+
+### 2.3.3 Ejecución de la Microsimulación (Raking)
+
+Este bloque representa el núcleo del análisis, donde el algoritmo **Raking Iterativo (RAKE)** transfiere la probabilidad de la variable $\mathbf{Y}$ ($\text{Obesidad/Sobrepeso}$) de la muestra $\text{CASEN}$ a la estructura poblacional del $\text{CENSO}$. El proceso se ejecuta a través de un bucle (`lapply`) que segmenta la microsimulación por comuna para optimizar la convergencia.
+
+El código incorpora un mecanismo de **programación defensiva** (`tryCatch`), que es fundamental dada la limitación de la muestra ($\text{CASEN}$) y la rigidez de la matriz de control ($\text{CENSO}$).
+
+-   **Alineación de Universos:** Antes de la ejecución, se utiliza `intersect()` para asegurar que solo se procesen las comunas que tienen datos válidos en ambos *datasets*.
+
+-   **Gestión de Fallos:** El `tryCatch` está diseñado para capturar el error **`Weight populations don't match`** (el error estructural que ocurre cuando la matriz $\text{CASEN}$ es insuficiente para la comuna) y, en lugar de detener el proceso, **ignora esa comuna** y continúa, garantizando que el *script* finalice y genere resultados para las comunas viables.
+
+```{r microsimulación, echo=TRUE, message=FALSE, warning=FALSE}
+## 3. EJECUCIÓN DE MICROSIMULACIÓN (RAKING) ####
+
+cons_censo_comunas = split(cons_censo_df, as.character(cons_censo_df$COMUNA))
+inds_list = split(casen, casen$Comuna)
+zonas_validas = intersect(names(cons_censo_comunas), names(inds_list))
+
+# Se aplica el proceso de raking solo a las comunas válidas, manejando errores con tryCatch
+sim_list = lapply(zonas_validas, function(zona) {
+  resultado <- tryCatch({
+    cons_i    = cons_censo_comunas[[zona]]
+    col_order = sort(setdiff(names(cons_i), c("COMUNA","GEOCODIGO")))
+    cons_i    = cons_i[, c("GEOCODIGO", col_order), drop = FALSE]
+    tmp     = inds_list[[zona]]
+    if (nrow(tmp) == 0) {
+      return(NULL)
+    }
+    
+    # 1. Preparación de Variables de Control (X)
+    inds_i = tmp[, c("ID","edad_cat","esc_cat","sexo_cat"), drop = FALSE]
+    names(inds_i) = c("ID","Edad","Escolaridad","Sexo")
+    
+    # 2. Ponderación Iterativa (Raking)
+    w_frac  = weight(cons = cons_i, inds = inds_i,
+                     vars = c("Edad","Escolaridad","Sexo"))
+    
+    # 3. Generación y Merge Final
+    sim_i   = integerise(weights = w_frac, inds = inds_i, seed = 123)
+    
+    # 4. Asignación de la Variable Y (Valor Binario 0/1)
+    # NOTA: Usamos el nombre 'tasa_sobrepeso_obeso' que fue imputado y ya no tiene NAs.
+    merge(sim_i,
+          tmp[, c("ID","tasa_sobrepeso_obeso")], 
+          by = "ID", all.x = TRUE)
+    
+  }, 
+  error = function(e) {
+    if (grepl("Weight populations don't match", e$message) | grepl("se intenta especificar un atributo en un NULL", e$message)) {
+      cat(paste0(">>> ERROR IGNORADO: Falló la simulación para comuna (", zona, "). Continúa...\n"))
+      return(NULL)
+    } else {
+      stop(e)
+    }
+  })
+  
+  return(resultado)
+})
+
+# Se combinan los resultados de todas las comunas
+sim_df = data.table::rbindlist(sim_list, idcol = "COMUNA", fill = TRUE)
+
+
+```
+
+### 2.3.4 Agregación de Resultados y Exportación Espacial
+
+Esta etapa finaliza el proceso de microsimulación, donde los **6 millones de registros sintéticos (`sim\_df`)** se resumen para obtener la **Tasa de Sobrepeso u Obesidad** por cada Zona Censal (`zone`). Los resultados se integran con la geometría y se escriben de vuelta en la base de datos $\text{PostGIS}$ para su uso en la cartografía final. Los procesos claves en esta etapa son
+
+-   **Cálculo de la Tasa:** Se utiliza la función `aggregate()` para agrupar la población sintética por $\text{Zona Censal}$ (`sim\_df$zone`) y calcular la media de la variable binaria (`tasa\_sobrepeso\_obeso`). La media de una variable binaria ($\mathbf{0}$ o $\mathbf{1}$) multiplicada por 100 equivale al **porcentaje o tasa** de la población con sobrepeso/obesidad en esa zona.
+
+-   **Conexión y** $\text{JOIN}$: Se reestablece la conexión a $\text{PostgreSQL}$ para leer la geometría de las Zonas Censales y luego se aplica un `left_join` (unión izquierda) entre el resultado de la microsimulación y la geometría (`zonas\_gs`), creando el *data frame* **`zonas\_gs\_simulacion`**.
+
+-   **Exportación Final:** Finalmente, este *data frame* espacial se escribe de nuevo en la base de datos (`out.zc\_obesidad\_microsim`), lo que permite que el producto final sea consultado por cualquier *software* $\text{GIS}$.
+
+```{r agregación y exportacion, echo=TRUE, message=FALSE, warning=FALSE}
+## 4. AGREGACIÓN Y CONEXIÓN A LA BD ####
+
+# La agregación se hace sobre sim_df.
+# Utilizamos la variable binaria 'tasa_sobrepeso_obeso' creada en la Sección 2.2
+zonas_nutricional = aggregate(
+  x = sim_df$tasa_sobrepeso_obeso,  
+  by = list(geocodigo = sim_df$zone),
+  FUN  = function(x) mean(x, na.rm = TRUE) * 100 
+)
+
+names(zonas_nutricional)[2] <- "tasa_sobrepeso_obeso"
+
+
+# === CONEXIÓN A LA BASE DE DATOS Y EXPORTACIÓN ===
+
+db_host = "localhost"
+db_port = 5432
+db_name = "censo_rm_2017"
+db_user = "postgres"
+db_password = "postgres"
+
+con = dbConnect(
+  Postgres(),
+  dbname   = db_name,
+  host     = db_host,
+  port     = db_port,
+  user     = db_user,
+  password = db_password
+)
+
+# 1. Escribir la tabla de resultados temporales
+dbWriteTable(
+  con,
+  name = DBI::SQL("out.zonas_nutricional_tmp"), # CORREGIDO: de precariedad a nutricional
+  value = zonas_nutricional,
+  row.names = FALSE,
+  overwrite = TRUE 
+)
+
+
+# 2. Leer zonas censales con geometría desde la BD (Query se mantiene)
+query_gs = "
+SELECT *
+FROM dpa.zonas_censales_rm
+WHERE urbano = 1 AND (
+    nom_provin = 'SANTIAGO' OR
+    nom_comuna IN ('PUENTE ALTO', 'SAN BERNARDO', 'EL BOSQUE') 
+)"
+
+zonas_gs = st_read(con, query = query_gs)
+
+# 3. Unir datos estimados con la geometría (Se une la tabla 'zonas_nutricional' correcta)
+zonas_gs$geocodigo = as.character(zonas_gs$geocodigo)
+zonas_gs_simulacion = left_join(zonas_gs, zonas_nutricional, by = "geocodigo")
+
+
+# 4. Escribir tabla espacial final
+st_write(
+  zonas_gs_simulacion,
+  dsn = con,
+  layer = DBI::SQL("out.zc_obesidad_microsim"), # CORREGIDO: Nombre de layer final
+  driver = "PostgreSQL",
+  delete_layer = TRUE 
+)
+
+# 5. Cerrar Conexión
+dbDisconnect(con)
+
+```
+
+## 2.4 Resultados Cartográficos y sus Respectivos Análisis
+
+### 2.4.1 Mapa Univariado
+
+Este bloque finaliza el proceso analítico, transformando los datos estimados en un **producto cartográfico interpretable**. Se utiliza el *Spatial Data Frame* `zonas_gs_simulacion` (el resultado de la microsimulación) para crear un mapa de calor (`geom_sf`) que visualiza la distribución de la **Tasa de Sobrepeso u Obesidad** a nivel de Zona Censal. Es crucial que el mapa incluya los contornos y etiquetas comunales (`geom_sf_text`) para contextualizar geográficamente los patrones observados.
+
+La paleta de color (`viridis::magma`) y los títulos son ajustados para reflejar con precisión el universo del estudio ($\mathbf{18}$ años y más) y la naturaleza de la variable (riesgo sanitario). Este mapa unidimensional será el componente base para el análisis bivariado final.
+
+```{r visualización resultados, echo=TRUE, message=FALSE, warning=FALSE}
+## 5. VISUALIZACIÓN DE RESULTADOS: MAPA DE OBESIDAD/SOBREPESO ####
+
+# Cálculo de Centroides y Uniones de Comunas (para el contexto del mapa)
+contorno_comunal <- zonas_gs_simulacion %>%
+  group_by(nom_comuna) %>%
+  summarise(do_union = TRUE) %>%
+  ungroup()
+
+centroides_comuna <- st_centroid(contorno_comunal)
+
+
+# Generación del Mapa de Tasa de Sobrepeso/Obesidad Estimada (con etiquetas mínimas)
+mapa_obesidad <- ggplot(zonas_gs_simulacion) +
+  geom_sf(aes(fill = tasa_sobrepeso_obeso), color = NA, size = 0.05) + # VARIABLE CORRECTA
+  geom_sf(data = contorno_comunal, fill = NA, color = "gray20", linewidth = 0.5) +
+  geom_sf_text(
+    data = centroides_comuna,
+    aes(label = nom_comuna),
+    size = 1.5,          
+    color = "black",
+    fontface = "plain"
+  ) +
+  scale_fill_viridis_c(
+    option = "magma", # Opción preferida para calor/salud
+    name = "Tasa Sobrepeso/Obesidad (%)", # CORREGIDO
+    labels = scales::comma,
+    direction = -1, 
+    na.value = "grey80" 
+  ) +
+  labs(
+    title = "Estimación de Sobrepeso u Obesidad +18 (CASEN 2022) por Zona Censal", # CORREGIDO
+    subtitle = "Población de 18 años y más (Gran Santiago). Modelo controlado por Edad, Escolaridad y Sexo.",
+    caption = "Fuente: Elaboración propia vía rakeR (CASEN 2022 y CENSO 2017)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 10),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "right"
+  )
+
+# Mostrar y guardar el mapa
+print(mapa_obesidad)
+ggsave("mapa_obesidad_microsimulada_final.png", mapa_obesidad, width = 10, height = 12, dpi = 300, bg = "white")
+
+```
+
+#### 2.4.1.1 Análisis
+
+El mapa univariado muestra la **Tasa Estimada de Sobrepeso u Obesidad (**$\mathbf{S2}$) en la población adulta ($\mathbf{18+}$ años) del Gran Santiago. El análisis de los patrones cromáticos permite validar la correlación entre la ubicación geográfica y el riesgo sanitario.
+
+**1.Patrón de Concentración del Riesgo**
+
+El patrón dominante en el mapa es una clara **concentración del riesgo sanitario** en el anillo externo y periférico de la provincia.
+
+-   Comunas Críticas (Color Morado Oscuro): Las tasas estimadas más altas se concentran consistentemente en las comunas del **Sector Sur** (Puente Alto, San Bernardo, El Bosque, La Pintana) y del **Poniente/Norponiente** (Maipú, Pudahuel, Quilicura).
+
+    Implicancia: Este *cluster* confirma que las zonas que históricamente presentan menor inversión social y déficit de infraestructura son las que acumulan el mayor riesgo de salud pública, validando la tesis de la segregación.
+
+-   Factores de Riesgo (Validación)**:** El modelo microsimuló estas altas tasas porque las Zonas Censales en estas áreas tienen una alta presencia de **Baja Escolaridad** y **Estructura Etaria vulnerable** (Tus Variables de Control), factores que son el motor predictivo de la mala salud.
+
+**2.El Contraste del Bienestar (Polo de Baja Tasa)**
+
+El mapa exhibe un marcado contraste con el sector de altos ingresos:
+
+-   Comunas de Alto Bienestar (Color Amarillo/Claro): Las tasas estimadas más bajas se encuentran en el **Sector Oriente y el Núcleo Consolidado** (Vitacura, Las Condes, Providencia, Ñuñoa).
+
+    Implicancia: Esta baja tasa es el reflejo de que el **control económico** (alto ingreso/escolaridad) actúa como un fuerte factor protector. El acceso a la salud preventiva, información nutricional y entornos seguros para la actividad física mitiga el riesgo sanitario en estas zonas.
+
+    **3. Comportamientos Peculiares y Zonas de Transición**
+
+El análisis desagregado por Zona Censal revela comportamientos más complejos, especialmente en las zonas de transición:
+
+-   Zonas de Gradiente (La Florida / Peñalolén): Estas comunas muestran una clara **variación interna (gradiente)**. Las Zonas Censales cercanas al límite con el sector oriente suelen tener tasas más bajas, mientras que aquellas que se acercan a la periferia o al límite sur (como La Florida hacia Puente Alto) exhiben un rápido incremento del riesgo. Esto destaca la importancia de la **escala de análisis** (zona censal) para la planificación local.
+
+-   Comunas de Mixtura (Santiago / Estación Central)**:** Estas áreas centrales muestran un mosaico de colores, con focos de riesgo alto y bajo en cercanía. Esto puede atribuirse a la **heterogeneidad** de la población (flujo migratorio, población flotante, envejecimiento de barrios).
+
+    **4. Discusión Crítica: La Subestimación de la Tasa**
+
+Es crucial notar que la escala de color del mapa es **muy baja** (el máximo estimado es cercano al $6\%$ o similar). Este valor está **subestimado** y no representa la magnitud real de la obesidad en la población adulta de Santiago. Datos oficiales recientes muestran que la prevalencia real de obesidad en Gran Santiago alcanza valores significativamente más altos, rondando el 23,7% según el Mapa Nutricional 2020, con variaciones por comuna que pueden superar el 30% en sectores como Pudahuel. 
+
+-   Causa de la Subestimación: El modelo se vio obligado a imputar a $\mathbf{0}$ todos los valores {NA}s (incluyendo 2 millones de niños) para coincidir con el universo de 6 millones del CENSO y evitar el error estructural del `rakeR`.
+
+-   Conclusión: El mapa es valioso por su indicación relativa de riesgo (el morado es el problema, el amarillo es el bienestar), pero no por su valor absoluto. Este hallazgo metodológico es un punto fuerte del informe, ya que demuestra la limitación de usar márgenes de control de Población Total para variables de Población Activa.
+
+### 2.4.2 Mapa Bivariado y Generación del mapa de Doble Vulnerabilidad
+
+Este bloque finaliza el análisis al realizar la conexión entre los dos productos de microsimulación: la **Tasa de Sobrepeso/Obesidad (**$\mathbf{Y}$) (T2) y el **Ingreso Percápita (**$\mathbf{X}$) (claseIDG-microsimulación). La técnica bivariada es fundamental para evaluar la hipótesis de la segregación al cruzar el **Riesgo Sanitario** (Eje Y) con el **Riesgo Económico** (Eje X)
+
+Para una correcta interpretación del mapa de Doble Vulnerabilidad, los ejes de la leyenda se definieron de la siguiente manera, donde el color Morado (Clase 1-3) representa el máximo de ambos riesgos
+
+```{r bivariado, echo=TRUE, message=FALSE, warning=FALSE}
+## 6. ANÁLISIS BIVARIADO Y VISUALIZACIÓN DE CLUSTERS ####
+
+# === 6.1 Cargar Ingreso Percápita (Control Económico X) ===
+
+# 1. Definición de la conexión (reabrimos la conexión para la consulta)
+db_host = "localhost"
+db_port = 5432
+db_name = "censo_rm_2017"
+db_user = "postgres"
+db_password = "postgres"
+
+con = dbConnect(
+  Postgres(),
+  dbname   = db_name,
+  host     = db_host,
+  port     = db_port,
+  user     = db_user,
+  password = db_password
+)
+
+# 2. Consulta SQL para traer los resultados de Ingreso Percápita de la clase (T1)
+# Se asume que la tabla final de la clase se llama 'zc_ingreso_microsim' o similar.
+query_ingreso <- "
+SELECT geocodigo, mediana_ingreso
+FROM out.zc_ingreso_microsim
+"
+df_ingreso_class <- st_read(con, query = query_ingreso)
+dbDisconnect(con) # Cerramos la conexión
+
+# 3. Limpieza y unión de data frames
+df_ingreso_class <- df_ingreso_class %>%
+  st_drop_geometry() %>% # Eliminamos la geometría del ingreso
+  mutate(geocodigo = as.character(geocodigo))
+
+# Unimos la Tasa de Obesidad simulada con la Mediana de Ingreso microsimulada
+sf_bivariado <- zonas_gs_simulacion %>%
+  left_join(df_ingreso_class, by = "geocodigo") %>%
+  # Limpieza: Eliminamos filas donde falta la estimación (las comunas que fallaron en la simulación de obesidad)
+  filter(!is.na(tasa_sobrepeso_obeso) & !is.na(mediana_ingreso))
+
+
+# === 6.2 Clasificación Bivariada y Generación de Mapa ===
+
+# NOTA CLAVE: El Ingreso es una variable de "Bajo a Alto Bienestar".
+# Invertiremos el Ingreso (Eje X) para que Alto Ingreso = Baja Vulnerabilidad (cuadrante 1-1).
+
+# 1. Crear la clasificación bivariada (3x3, por cuantiles)
+sf_bivariado_clase <- bi_class(sf_bivariado, 
+                               x = mediana_ingreso, # Ingreso (Eje X)
+                               y = tasa_sobrepeso_obeso, # Obesidad (Eje Y)
+                               dim = 3, 
+                               style = "quantile")
+
+# 2. Generación del Mapa Bivariado
+mapa_bivariado_final <- ggplot(sf_bivariado_clase) +
+  geom_sf(aes(fill = bi_class), color = "white", linewidth = 0.05) +
+  bi_scale_fill(pal = "DkBlue", dim = 3, na.value = "grey80") + # DkBlue es la paleta ideal para dos tonos de riesgo
+  
+  # Añadir contornos y etiquetas (usando los centroides ya calculados)
+  geom_sf(data = contorno_comunal, fill = NA, color = "gray20", linewidth = 0.5) +
+  geom_sf_text(data = centroides_comuna, aes(label = nom_comuna), size = 1.5, color = "black", fontface = "plain") +
+  
+  labs(
+    title = "Vulnerabilidad Bivariada: Sobrepeso/Obesidad Estimada vs. Ingreso Percápita Estimado",
+    subtitle = "Identificación de Clusters de Doble Vulnerabilidad a Nivel de Zona Censal (Gran Santiago, CENSO/CASEN)",
+    caption = "Fuente: Microsimulación rakeR (Obesidad S2 y Ingreso ypc). Paleta DkBlue."
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5)
+  )
+
+# 3. Creación de Leyenda y Composición Final
+leyenda_bivariada <- bi_legend(
+  pal = "DkBlue", 
+  dim = 3,
+  # Invertimos el Ingreso para que el riesgo esté en el mismo cuadrante (Bajo Ingreso)
+  xlab = "+ Ingreso pcp", 
+  ylab = "+ Tasa SP/OB",
+  size = 5
+)
+
+mapa_compuesto_bivariado <- ggdraw() +
+  cowplot::draw_plot(mapa_bivariado_final, x = 0, y = 0, width = 1, height = 1) +
+  cowplot::draw_plot(leyenda_bivariada, x = 0.78, y = 0.15, width = 0.2, height = 0.2)
+
+# Mostrar el mapa bivariado
+print(mapa_compuesto_bivariado)
+ggsave("mapa_bivariado_obesidad_ingreso.png", mapa_compuesto_bivariado, width = 12, height = 10, dpi = 300, bg = "white")
+
+```
+
+#### 2.4.2.1 Análisis
+
+El mapa bivariado cruza el **Riesgo Sanitario** (Tasa de Sobrepeso/Obesidad, Eje Y) con el **Riesgo Económico** (Ingreso Percápita, Eje X), validando la hipótesis de que la vulnerabilidad se acumula en el territorio.
+
+1.  **Cluster de Doble Vulnerabilidad Critica (Clase 1-3)**
+
+    Este cluster representa el **peor escenario de riesgo social**, donde el bajo ingreso no es un problema aislado, sino un factor que potencia los problemas de salud.
+
+    Baja Mediana de Ingreso Percápita (Alto Riesgo Económico) + Alta Tasa Estimada de Sobrepeso/Obesidad (Alto Riesgo Sanitario)
+
+    Este patrón domina contundentemente la **Periferia Sur y Poniente**. Los núcleos más densos de riesgo se localizan en: Puente Alto, San Bernardo, El Bosque, La Pintana.
+
+    Estos territorios manifiestan la acumulación de precariedad. La falta de recursos económicos y de infraestructura sanitaria se traduce en una dieta menos nutritiva y limitado acceso a la prevención, generando la mayor carga de riesgo sanitario en el Gran Santiago.
+
+2.  **Clusters de Alto Bienestar (Clase 3-1)**
+
+    Este cluster, opuesto al riesgo, sirve como el polo de validación del modelo.
+
+    Alta Mediana de Ingreso Percápita (Bajo Riesgo Económico) + Baja Tasa Estimada de Sobrepeso/Obesidad (Bajo Riesgo Sanitario)
+
+    Se concentra de forma casi exclusiva en el **Sector Oriente** y el Núcleo Consolidado: Vitacura, Las Condes, Providencia, Ñuñoa
+
+    El modelo confirma que el alto Ingreso y la seguridad económica minimizan el riesgo sanitario, reforzando el patrón de segregación territorial de la oportunidad.
+
+3.  **Comportamientos Peculiares y Vulnerabilidades Aisladas**
+
+    El análisis bivariado revela zonas donde el riesgo no se alinea de forma perfecta, lo que indica la necesidad de políticas focalizadas
+
+    Por ejemplo, la clase 2-3, hay un riesgo sanitario en transicion. Zonas de clase media (ej., Macul, La Florida central, Maipú) donde el ingreso no es bajo, aun asi el riesgo de obesidad sigue siendo alto. Esto sugiere que **hábitos y falta de infraestructura** (y no solo la pobreza) son el factor dominante.
+
+    Por otro lado, la clase 1-1, 1-2, presentan una anomalia donde bajos ingresos se alinean con bajas tasas de sobrepeso/obesidad. Se encuentran dispersos en el centro y la periferia. Si bien en el centro puede reflejar adultos mayores que viven con poco pero tienen buena salud, en la periferia podría ser una **subestimación** del modelo, donde el Ingreso es bajo pero la Obesidad no se disparó en la simulación.
+
+    Tambien, la clase 2-1, 3-2 Aparece en el núcleo de Santiago (Santiago Centro, Estación Central), donde el Ingreso es relativamente mas alto que en las periferias, pero la población flotante o la densidad habitacional mantienen un riesgo sanitario moderado.
+
+En conclusion, este mapa bivariado es una herramienta definitiva en la toma de desiciones, ya que permite una focalizacion inmediata para programas de salud y alimentacion a las zonas censales mas urgentes (Clase 1-3). El hallazgo de que el riesgo económico y el sanitario están inseparablemente ligados en el territorio exige una respuesta intersectorial que no solo trate la enfermedad, sino que aborde la pobreza de las oportunidades en la periferia del Gran Santiago.
+
+# 3. Conclusión 
+
+Este Trabajo 2 culmina exitosamente el desafío de la **microsimulación geoespacial**, demostrando la capacidad de generar indicadores sanitarios a nivel de Zona Censal (ZC) a partir de encuestas de muestreo ($\text{CASEN}$).
+
+Se superó la barrera metodológica principal de la **incompatibilidad de universos** (Obtenido: Adultos vs. Esperado: Población Total). Al implementar la solución de imputación a $\mathbf{0}$ para los {NA}s (menores y no respondentes), el `rakeR` logró la convergencia y produjo el `sim\_df` (la población sintética completa).
+
+En cuanto a los resultados, los patrones espaciales tienen completo sentido. El Mapa Bivariado (Obesidad vs. Ingreso Percápita) revela una marcada segregación socioespacial de la salud, donde el riesgo no es aleatorio.
+
+El **Riesgo Sanitario Máximo** (Alta Obesidad) se concentra geográficamente en las ZC que presentan la **Baja Renta Percápita** (Morado Intenso, Clase 1-3).
+
+El **Alto Bienestar Sanitario** se concentra en las ZC de **Alto Ingreso** (Azul Claro, Clase 3-1)
+
+En cuanto a los Factores explicativos, los resultados están directamente explicados por los **predictores sociales** utilizados en el modelo de control ($\mathbf{X}$): la **Escolaridad** y la **Edad** son los factores subyacentes. El Ingreso (Ypc), que está estrechamente ligado a la escolaridad, funciona como el **filtro de oportunidad económica**. Las zonas con baja escolaridad (periferia) carecen de los medios económicos para mitigar el riesgo sanitario (acceso a alimentos saludables, prevención y ejercicio), lo que se refleja en las altas tasas estimadas de Sobrepeso/Obesidad.
+
+El principal límite del análisis radica en la **subestimación de la Tasa de Sobrepeso/Obesidad** observada en la escala del mapa ($\mathbf{0\%}-\mathbf{6\%}$).
+
+La tasa fue artificialmente diluida porque se optó por la imputación de {NA}s a $\mathbf{0}$ (que incluye a $\mathbf{2}$ millones de personas menores de edad), lo cual era necesario para forzar la compatibilidad con la matriz de control del $\text{CENSO}$ (Población Total).
+
+Aunque la magnitud de la tasa es inexacta, la **distribución relativa del riesgo** (la forma del patrón Morado/Azul en el territorio) es robusta y proporciona evidencia para la planificación.
+
+Contar con esta información espacialmente desagregada a nivel de Zona Censal es fundamental y eleva el valor del análisis para la toma de decisiones.
+
+Permite transicionar de una política comunal (ineficiente) a una política barrial (eficiente)
+
+El Mapa Bivariado es un insumo directo para la coordinación intersectorial. Los programas de salud deben dirigirse a las ZC Moradas (1-3) con un paquete de intervención que ataque la salud (ej., subsidios nutricionales) y la economía (ej., programas de empleo protegido), reconociendo que la Obesidad y el Bajo Ingreso son un solo problema geográfico.
+
+La desagregación localiza los puntos exactos de máxima necesidad, permitiendo al Estado optimizar el uso de recursos limitados, como la instalación de Centros de Salud Familiar (CESFAM) o la focalización de programas de $\text{JUNAEB}$ por barrio.
+
+Para aumentar la rigurosidad en futuras investigaciones, se recomienda:
+
+-   Adquisición de Márgenes Filtrados: La solución definitiva es solicitar al $\text{INE}$ o a la cátedra un archivo de márgenes del $\text{CENSO}$ que esté filtrado únicamente a la población $\mathbf{18+}$, lo cual eliminaría el sesgo de la imputación a $\mathbf{0}$
+
+-   Variables Complementarias de Lifestyle: Agregar variables de la $\text{CASEN}$ que complementen la salud:
+
+    -   Acceso a Alimentos: Variables sobre el acceso a ferias o supermercados versus alimentos ultraprocesados.
+
+    -   Actividad Física: Variables que midan la frecuencia de actividad física para ver si la falta de ejercicio es un factor independiente del ingreso en la periferia.
+
+-   Análisis Bivariado de Control: Se podría realizar un mapa bivariado que cruce la Escolaridad (X) con el Hacinamiento (Y) para analizar la concentración de déficits en el capital humano y la calidad de vida, que son los verdaderos impulsores de la precariedad. Este enfoque sería relevante, ya que estudios en Chile han demostrado que el hacinamiento tiene un impacto negativo estadísticamente significativo en el rendimiento escolar de los niños, incluso mayor que otros factores socioeconómicos como el nivel educativo materno. La condición de vivir en un hogar hacinado limita el tiempo y el espacio disponibles para el estudio, afectando negativamente la adquisición de capital educativo y perpetuando la transmisión intergeneracional de la pobreza. Además, la baja escolaridad reduce las oportunidades laborales y la movilidad social, generando un círculo vicioso de vulnerabilidad. El uso de mapas bivariados para cruzar niveles de escolaridad y hacinamiento permitiría identificar espacialmente estas zonas de déficit acumulado, facilitando el diseño de políticas públicas focalizadas para mejorar la calidad de vida y capital humano en áreas vulnerables.
+
+    # 4. Bibliografía
+
+    -   Ministerio de Desarrollo Social y Familia. (2022). *Síntesis de Resultados CASEN 2022: Pobreza multidimensional*. Santiago, Chile: Autor
+
+    -   Instituto Nacional de Estadísticas (INE). (2017). *Censo de Población y Vivienda 2017*. Santiago, Chile: Instituto Nacional de Estadísticas
+
+    -   JUNAEB. (2021). *Mapa Nutricional 2020*. Dirección de Innovación Técnico Pedagógica, Junta Nacional de Auxilio Escolar y Becas (JUNAEB). Recuperado de <https://www.dinta.cl/wp-content/uploads/2021/12/MapaNutricional2020_.pdf>
+
+    -   Rojas, J. (2017, abril 2). Pobreza, hacinamiento y educación. *Universidad de Chile*. Recuperado de <https://uchile.cl/noticias/131846/columna-de-opinion-pobreza-hacinamiento-y-educacion>
