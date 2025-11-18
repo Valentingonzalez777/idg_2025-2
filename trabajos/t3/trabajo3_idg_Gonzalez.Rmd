@@ -1,0 +1,672 @@
+---
+title: "Trabajo 3: Agrupamiento de zonas censales utilizando K- Means"
+subtitle: "Segmentación Multidimensional de la Vulnerabilidad en la Provincia de Santiago: Integración del Riesgo Sanitario, Ingreso y Capital Humano (K=4)"
+author: "Valentin Gonzalez"
+date: "18/11/2025"
+output: html_document
+---
+
+# 1.Introducción
+
+El sobrepeso y la obesidad han dejado de ser fenómenos meramente individuales para convertirse en un problema de salud pública de naturaleza estructural. Como afirma la Organización Mundial de la Salud (OMS): "La obesidad es un problema multidimensional cuya prevalencia está íntimamente ligada a los determinantes sociales. El acceso limitado a alimentos saludables, la falta de oportunidades de educación nutricional y las dificultades económicas interactúan, creando un círculo vicioso que consolida la desigualdad en el estado de salud de la población" (OMS, 2020).Por ejemplo, en Chile, la prevalencia de obesidad infantil está fuertemente asociada a la pobreza y a la baja educación parental, junto a factores ambientales como el acceso a alimentos poco saludables y la calidad del entorno, lo que refleja la segregación urbana y sus impactos en la salud (INSTITUTO de Nutrición y Tecnología de Alimentos [INTA], 2024). Adicionalmente, análisis epidemiológicos muestran que un mayor nivel educativo se asocia con una reducción del índice de masa corporal, mientras que el ingreso económico presenta efectos que varían según el sexo, actuando como factor protector o de riesgo en distintos grupos (Palma & Cabezas, 2025).
+
+Siguiendo por esta linea, el presente estudio aborda la necesidad de desagregar la **vulnerabilidad socioespacial** en la **Provincia de Santiago** a nivel de **Zona Censal (ZC)**. La planificación pública eficaz requiere identificar no solo el dónde, sino también el *por qué* y el *cómo* se acumulan los déficits en el territorio.
+
+Por tanto, realizar un análisis multivariado que considere simultáneamente la interacción entre educación, ingresos y obesidad permite captar de manera más precisa las dinámicas sociales y económicas detrás del fenómeno
+
+Este trabajo da continuidad a la fase de microsimulación (**Trabajo 2**), donde se estimó la **Tasa de Sobrepeso/Obesidad** a escala de ZC, lo cual permite superar la limitación de las encuestas muestrales.
+
+El análisis utiliza el algoritmo **K-Means** para clasificar las ZC con base en tres pilares de la desigualdad: el **Riesgo Sanitario** (Tasa de Obesidad), el **Riesgo Económico** (Ingreso Percápita) y el **Capital Humano** (Escolaridad). La identificación de estos patrones latentes es esencial para transicionar de políticas de promedio comunal a intervenciones barriales.
+
+## 1.1 Objetivo General e Hipotesis
+
+Aplicar técnicas de agrupamiento multivariado (K-Means) para generar una clasificación tipológica (K=4) de las Zonas Censales de la Provincia de Santiago, basada en indicadores de salud, ingresos y educación.
+
+Se espera que el análisis de **clustering K-Means revele una fuerte asociación espacial** entre el **Riesgo Sanitario** (alto Sobrepeso/Obesidad) y el **Deficit de Capital Humano/Económico** (Educacion/Ingresos) confirmando la acumulación de estos déficits en los mismos grupos (clusters) y su concentración en un **patrón geográfico continuo** y segregado dentro de la Provincia de Santiago.
+
+## 1.2 Objetivos Específicos
+
+-   Implementar la metodología K-Means (K=4) sobre variables microsimuladas y del CENSO, justificando el modelo a través del Método del Codo.
+
+-   Generar un **Mapa de Clusters** que muestre la distribución espacial de los cuatro perfiles de vulnerabilidad etiquetados.
+
+-   Calcular e interpretar el **Índice de Shannon (**$H$) para cuantificar la variabilidad (segregación interna) de los clusters dentro de cada comuna.
+
+# 2. Desarrollo
+
+## 2.1 Marco teórico
+
+#### Agrupamiento (Clustering) y K-Means
+
+El **Clustering** es una técnica de aprendizaje no supervisado que busca segmentar un conjunto de datos en grupos (clusters) de tal manera que los objetos dentro de un mismo grupo sean más similares entre sí que con aquellos de otros grupos. El algoritmo **K-Means** logra esto minimizando la **Suma de Cuadrados Intra-Cluster (WSS)**.
+
+La aplicación de K-Means en el análisis territorial permite transformar la complejidad de múltiples variables continuas (Ingreso, Obesidad, Escolaridad) en una **única variable categórica simple** (el *cluster*), facilitando la visualización e interpretación de los patrones espaciales. La selección de K=4 se justifica por el **Método del Codo**, que indica una separación óptima de la varianza total de los datos.
+
+#### Índice de Shannon (H) y Segregación Interna
+
+El **Índice de Shannon (**$H$) es una métrica clásica utilizada en ecología para medir la diversidad de especies, pero en geografía se aplica para cuantificar la **heterogeneidad territorial**. Un valor alto de $H$ en una comuna indica que en su interior coexisten en proporciones significativas **múltiples tipos de clusters** (por ejemplo, zonas de Alto Bienestar y zonas de Vulnerabilidad Crítica).
+
+Su utilidad es clave para medir la **segregación interna**: si una comuna tiene un alto índice $H$, su planificación debe ser a escala de barrio, ya que las políticas de promedio comunal (un "talla única") resultarán ineficientes.
+
+## 2.2 Metodología y variables
+
+El estudio se focalizó en la Provincia de Santiago, integrando tres indicadores clave:
+
+1.  **Riesgo Sanitario:** Tasa de Sobrepeso/Obesidad (Microsimulada T2).
+
+2.  **Riesgo Económico:** Mediana de Ingreso Percápita (Microsimulada T1/Clase).
+
+3.  **Capital Humano:** Porcentaje de Escolaridad $\ge 16$ años (CENSO 2017).
+
+A pesar de la robustez del modelo K-Means, el análisis incorpora una limitación temporal inherente a la integración de las fuentes: el modelo de *clustering* utiliza la estructura poblacional de control del CENSO 2017 (variables estructurales como Escolaridad y Edad), mientras que las variables de vulnerabilidad (Tasa de Obesidad e Ingreso) provienen de la CASEN 2022.
+
+Los productos resultantes no son solo una fotografía *cuantitativa* de un año específico, sino una aproximación cualitativa directa a la realidad, mostrando el patrón de vulnerabilidad actual (2022) sobre la estructura residencial rígida (2017) de la Provincia. Esta composición espacialmente fija revela las zonas que, a pesar de los cambios demográficos y migratorios pos-2017, mantienen una estructura de bajos recursos y bajos ingresos, evidenciando las áreas de vulnerabilidad estructural persistente en el tiempo.
+
+## 2.3 Código y Desarrollo Analítico
+
+### 2.3.1 Carga de Librerías
+
+Este bloque carga todas las librerías necesarias y define la conexión a PostgreSQL.
+
+```{r librerias, echo=TRUE, message=FALSE, warning=FALSE}
+rm(list = ls())
+## 1. LIBRERÍAS Y CONEXIÓN ####
+
+# Librerías para Clustering y Visualización
+library(factoextra) # Para el método del codo (fviz_nbclust)
+library(ggplot2)    # Para gráficos y mapas
+library(cowplot)    # Para composición de mapas
+library(dplyr)      # Para manipulación de datos
+
+# Librerías Geoespaciales y de Base de Datos
+library(sf)         # Simple Features (manejo de datos espaciales)
+library(DBI)        # Interfaz de conexión a bases de datos
+library(RPostgres)  # Driver para PostgreSQL
+```
+
+### 2.3.2 Carga y preparación de datos
+
+Su propósito es **establecer la conexión con PostGIS** y ejecutar las consultas SQL que extraen y unifican las variables de estudio desde las diferentes fuentes de datos (CENSO 2017 y Microsimulaciones T1/T2)
+
+```{r carga datos, echo=TRUE, message=FALSE, warning=FALSE}
+# ----------------------------------------------------
+# 1.1. Definición de Parámetros de Conexión (Reemplaza si es necesario)
+# ----------------------------------------------------
+db_host     = "localhost"     # servidor de BD
+db_port     = 5432            # puerto de escucha
+db_name     = "censo_rm_2017" # nombre de la base
+db_user     = "postgres"      # usuario de conexión
+db_password = "postgres"      # clave de usuario
+
+# ----------------------------------------------------
+# 1.2. Establecer Conexión a BD
+# ----------------------------------------------------
+con = dbConnect(
+  Postgres(),
+  dbname   = db_name,
+  host     = db_host,
+  port     = db_port,
+  user     = db_user,
+  password = db_password
+)
+```
+
+### 2.3.3 Obtención y Unión de Variables
+
+A continuación, se detallan las operaciones de consulta y *join*. Este proceso trae la geometría de las Zonas Censales y las tres dimensiones del riesgo (Sanitario, Económico y Capital Humano) desde la base de datos a un único objeto de R. El código asegura la compatibilidad de tipos de datos (mediante *casting* en SQL) y la limpieza de registros incompletos (`NA`).
+
+```{r variables, echo=TRUE, message=FALSE, warning=FALSE}
+## 2. OBTENCIÓN Y UNIÓN DE VARIABLES (Final) ####
+
+# Nombre de la tabla de geometría según la captura:
+TABLA_GEOMETRIA = "dpa.zonas_censales_rm" # Nombre confirmado
+
+sql_base_geometria_esc = paste0("
+WITH zonas_indicadores AS (
+    -- 1. Calcular el porcentaje de escolaridad por zona censal (zc)
+    SELECT
+        z.geocodigo,
+        ROUND(
+            COUNT(*) FILTER (WHERE p.escolaridad >= 16) * 100.0
+            / NULLIF(COUNT(*) FILTER (WHERE p.escolaridad IS NOT NULL), 0),
+        2) AS ptje_esc_mayor_16
+    FROM public.personas AS p
+    JOIN public.hogares AS h ON p.hogar_ref_id = h.hogar_ref_id
+    JOIN public.viviendas AS v ON h.vivienda_ref_id = v.vivienda_ref_id
+    JOIN public.zonas AS z ON v.zonaloc_ref_id = z.zonaloc_ref_id
+    JOIN public.comunas AS c ON z.codigo_comuna = c.codigo_comuna 
+    GROUP BY z.geocodigo
+    HAVING COUNT(*) > 10
+)
+-- 2. Unir el cálculo de escolaridad con la tabla de geometría y FILTRAR por Santiago
+SELECT 
+    g.geocodigo::text AS geocodigo, -- Convertimos a TEXT para que el st_read lo reconozca
+    g.nom_comuna,
+    g.geom,  
+    zi.ptje_esc_mayor_16
+
+FROM ", TABLA_GEOMETRIA, " AS g      
+JOIN zonas_indicadores AS zi         
+    ON g.geocodigo::text = zi.geocodigo -- ¡CONVERSIÓN AQUÍ!
+WHERE g.nom_provin = 'SANTIAGO' 
+")
+
+# Ejecutar y crear el objeto espacial base
+zonas_gs_base = st_read(con, query = sql_base_geometria_esc)
+
+cat(paste0("Cargadas ", nrow(zonas_gs_base), " zonas censales con geometría y escolaridad.\n"))
+
+# ----------------------------------------------------
+# 2.2. CONSULTA OBESIDAD (Microsimulada T2)
+# ----------------------------------------------------
+sql_obesidad = "SELECT geocodigo, tasa_sobrepeso_obeso FROM out.zc_obesidad_microsim"
+df_obesidad = dbGetQuery(con, sql_obesidad)
+
+# ----------------------------------------------------
+# 2.3. CONSULTA INGRESO (Microsimulada /Clases)
+# ----------------------------------------------------
+sql_ingreso = "SELECT geocodigo, mediana_ingreso FROM out.zc_ingreso_microsim"
+df_ingreso = dbGetQuery(con, sql_ingreso)
+
+# ----------------------------------------------------
+# 2.4. UNIÓN FINAL DE VARIABLES EN R y Limpieza
+# ----------------------------------------------------
+
+zonas_gs_clusters = zonas_gs_base %>%
+  # Unir con Obesidad
+  left_join(df_obesidad, by = "geocodigo") %>%
+  # Unir con Ingreso
+  left_join(df_ingreso, by = "geocodigo") %>%
+  # Estandarización final y limpieza de NA
+  mutate(geocodigo = as.character(geocodigo)) %>%
+  filter(!is.na(tasa_sobrepeso_obeso) & !is.na(mediana_ingreso) & !is.na(ptje_esc_mayor_16))
+
+# Desconectar la BD (liberar recursos)
+dbDisconnect(con) 
+
+cat(paste0("Total de Zonas Censales listas para clustering (sin NA): ", nrow(zonas_gs_clusters), ".\n"))
+
+```
+
+### 2.3.4 Clustering K-MEANS
+
+Antes de aplicar el algoritmo, se emplea el Método del Codo (WSS) para justificar la elección de $K=4$. Una vez validado, el algoritmo K-Means se ejecuta sobre los datos escalados. Este proceso de aprendizaje no supervisado es fundamental para agrupar las Zonas Censales en tipologías coherentes, minimizando la varianza dentro de cada uno de los cuatro clusters.
+
+```{r clustersKM, echo=TRUE, message=FALSE, warning=FALSE}
+## 3. CLUSTERING K-MEANS Y ASIGNACIÓN ####
+
+# ----------------------------------------------------
+# 3.1. Selección de Variables y Escalado
+# ----------------------------------------------------
+# El objeto zonas_gs_clusters ya está listo con las 3 variables: Obesidad, Ingreso, Escolaridad
+vars_clusters = zonas_gs_clusters %>%
+  st_drop_geometry() %>%
+  select(tasa_sobrepeso_obeso, mediana_ingreso, ptje_esc_mayor_16)
+
+# Escalado (OBLIGATORIO para K-Means)
+vars_scaled = scale(vars_clusters)
+
+# ----------------------------------------------------
+# 3.2. Determinación de K (Método del Codo)
+# ----------------------------------------------------
+# Genera el gráfico para justificar el número óptimo de K
+wss_plot = fviz_nbclust(vars_scaled, kmeans, method = "wss") +
+  labs(title = "Método del Codo para K-Means", x = "Número de clusters (k)", y = "WSS") +
+  theme_minimal()
+print(wss_plot) 
+# 
+
+# ----------------------------------------------------
+# 3.3. Ejecución de K-Means 
+# ----------------------------------------------------
+K = 4 # <<--- Ajusta este valor según la justificación del gráfico anterior
+set.seed(123)
+km_result = kmeans(vars_scaled, centers = K, nstart = 25)
+
+# Asignar los clusters de vuelta al dataframe espacial
+zonas_gs_clusters$cluster = as.factor(km_result$cluster)
+
+```
+
+Elegir el numero de clusters es una decisión metodológica que se fundamenta en un equilibrio entre la robustez estadística (demostrada por la WSS) y la ganancia en la interpretabilidad para su análisis de vulnerabilidad
+
+Aunque el Método del Codo presenta múltiples "quiebres", se elige $K=4$ porque es el último valor que proporciona una reducción de varianza significativa antes de la meseta, permitiendo desagregar de manera crucial los perfiles socioeconómicos intermedios.
+
+|  |  |  |  |  |
+|---------------|---------------|---------------|---------------|---------------|
+| K | WSS Aproximada | Reducción sobre K anterior | Ganancia % (aprox.) | Justificación del Salto |
+| 2 | ≈1750 | N/A | N/A | Solo separa los dos grandes polos: Riqueza vs. Pobreza. |
+| 3 | ≈1050 | 700 | ≈40% | Primer Codo: Establece la estructura social de tres clases (Polo Alto, Clase Media/Transición, Polo Bajo). |
+| **4** | **≈700** | **350** | **≈33%** | **Segundo Codo (Punto de Elección): Permite una distinción fundamental dentro de la Clase Media.** |
+| 5 | ≈550 | 150 | ≈21% | Meseta: Las ganancias se vuelven marginales, no justificando la complejidad. |
+
+En un principio se realizo el analisis con 3 clusters que distinguian claramente la estructura social en tres clases (Polo Alto, Polo Clase Media/Transicion y Polo Bajo), perdiendo la capacidad de distinguir: zonas que lograron consolidación o zonas que viven en un riesgo estructural persistente debido a la baja escolaridad.
+
+Seguido en esa linea es que se eligen 4 clusters, ya que asi se permite separar en dos este grupo intermedio. Este valor permite una segmentación mas granular de la clase media y se las zonas de transición, mejorando la focalización de políticas públicas.
+
+A continuación se presenta un resumen de ambos clusters intermedios para entender la diferencia
+
+| Perfil (K=4) | Ingreso (CLP) | Escolaridad Educación Superior (%) | Rol |
+|------------------|------------------|------------------|------------------|
+| Cluster "Clase Media Consolidada" | ≈557.000 | 40% | Zonas con **Ingresos y Capital Humano Medio** y con riesgo sanitario bajo |
+| Cluster "Déficit de Capital umano y Riesgo Sanitario | ≈386.000 | 14% | Zonas de **riesgo medio**, donde el ingreso es bajo, pero el problema estructural es el **déficit de Capital Humano y Sanitario** |
+
+### 2.3.5 Análisis e Interpretación de Clusters
+
+Esta fase transforma el resultado matemático en una clasificación socioespacial interpretable. Primero se genera la tabla de perfiles estadísticos (`cluster_perfil`) para determinar las medias de Ingreso, Obesidad y Escolaridad de cada cluster. Luego, se procede al etiquetado definitivo, asignando a cada grupo un nombre que refleje su perfil de riesgo
+
+```{r perfil_cluster, echo=TRUE, message=FALSE, warning=FALSE}
+
+# --------------------------------------------
+# 4.1. Perfil estadístico de cada Cluster
+# ---------------------------------------------
+cluster_perfil = zonas_gs_clusters %>%
+  st_drop_geometry() %>%
+  group_by(cluster) %>%
+  summarise(
+    N_Zonas = n(),
+    Tasa_Obesidad_Media = mean(tasa_sobrepeso_obeso, na.rm = TRUE),
+    Ingreso_Mediano_Media = mean(mediana_ingreso, na.rm = TRUE),
+    Escolaridad_Media = mean(ptje_esc_mayor_16, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+print(cluster_perfil)
+```
+
+```{r etiquetas, echo=TRUE, message=FALSE, warning=FALSE}
+# ----------------------------------------------------
+## 4.2. Asignación de Etiquetas  ####
+
+# Definición de las etiquetas basadas en el análisis de perfiles (Nombres definitivos para el informe):
+etiquetas_cluster_df = data.frame(
+  cluster = as.factor(c(1, 2, 3, 4)),
+  cluster_etiqueta = c(
+    "Clase Media Consolidada",                        # Cluster 1: Ingreso Medio, ALTA Escolaridad (Baja Obs)
+    "Doble Vulnerabilidad Crítica",                   # Cluster 2: Máximo Riesgo
+    "Déficit de Capital Humano y Riesgo Sanitario",   # Cluster 3: Ingreso Bajo, BAJA Escolaridad (Media Obs)
+    "Alto Bienestar/Capital Humano"                   # Cluster 4: Mínimo Riesgo
+  )
+)
+
+# Unir las etiquetas al dataframe principal.
+zonas_gs_clusters = zonas_gs_clusters %>%
+  left_join(etiquetas_cluster_df, by = "cluster")
+
+# ----------------------------------------------------
+# 4.3. Ordenamiento del Factor para la Leyenda (ROJO -> NARANJA -> AZUL -> VERDE)
+# ----------------------------------------------------
+# Ordenamos para la visualización del riesgo:
+# El orden ahora es: Crítica -> Periférica -> Consolidada -> Bienestar.
+zonas_gs_clusters$cluster_etiqueta = factor(
+  zonas_gs_clusters$cluster_etiqueta,
+  levels = c(
+    "Doble Vulnerabilidad Crítica",                    # 1. Máximo Riesgo (ROJO)
+    "Déficit de Capital Humano y Riesgo Sanitario",    # 2. Riesgo Alto/Medio (NARANJA)
+    "Clase Media Consolidada",                         # 3. Riesgo Controlado (AZUL)
+    "Alto Bienestar/Capital Humano"                    # 4. Mínimo Riesgo (VERDE)
+  )
+)
+
+```
+
+### 2.3.6 Gráfico de Dispersión 2D
+
+Para validar la calidad de la segmentación y la asignación de etiquetas, se utilizan gráficos de dispersión 2D. Estas visualizaciones proyectan los clusters sobre los ejes de las variables originales (Ingreso vs. Obesidad y Escolaridad) y permiten confirmar la separación física y la coherencia de los cuatro perfiles en el espacio de las variables
+
+```{r grafico dispersion, echo=TRUE, message=FALSE, warning=FALSE}
+## 4.5. GRÁFICOS DE DISPERSIÓN 2D PARA VISUALIZAR LOS CLUSTERS (K=4) ####
+# Objetivo: Mostrar cómo se distribuyen los 4 clusters en el espacio de las variables originales
+# (Ingreso, Obesidad, Escolaridad) para una interpretación directa.
+
+# ----------------------------------------------------
+# Gráfico 1: Riesgo Sanitario vs. Riesgo Económico (Obesidad vs. Ingreso)
+# ----------------------------------------------------
+plot_obs_ingreso = ggplot(zonas_gs_clusters, aes(x = mediana_ingreso, y = tasa_sobrepeso_obeso, color = cluster_etiqueta)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(
+    title = "Densidad de Clusters: Obesidad vs. Ingreso",
+    x = "Mediana de Ingreso Percápita Estimada (CLP)",
+    y = "Tasa de Sobrepeso/Obesidad Estimada (%)"
+  ) +
+  scale_color_manual(
+    name = "Perfil de Vulnerabilidad",
+    values = c(
+      "Doble Vulnerabilidad Crítica" = "#E41A1C",           # Rojo
+      "Déficit de Capital Humano y Riesgo Sanitario" = "#FF7F00",  # Naranja
+      "Clase Media Consolidada" = "#377EB8",                # Azul
+      "Alto Bienestar/Capital Humano" = "#4DAF4A"           # Verde
+    )
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+
+print(plot_obs_ingreso)
+
+
+
+
+```
+
+**Analisis Gráfico Riesgo Sanitario v/s Riesgo Económico**
+
+1\. Doble Vulnerabilidad Crítica (Rojo): Es el *cluster* más rígido y concentrado en el extremo inferior del ingreso (bajo 500.000 CLP). Concentra la mayor riesgo por la máxima Tasa de Sobrepeso/Obesidad (sobre $\approx 2.5\%$ hasta $\approx 6.0\%$ y más)
+
+2\. Déficit de Cpital Humano y Riesgo Sanitario (Naranjo): Se situa inmediatamente a los pies del cluster rojo, mostrando una proyección mas dispersa hacia ingresos muy levemente mayores $\approx 400.000$ a $\approx 600.000$ CLP). Además Presenta una Tasa de Obesidad media-alta (entre $\approx 1.5\%$ y $\approx 3.0\%$)
+
+3\. Clase Media Consolidada (Azul): Muestra una dispersión mas horizontal en el eje del ingreso, con una densidad claramente separada de los polos de vulnerabilidad. El riesgo sanitario esta altamente controlado, situandose la mayoria de los puntos por debajo del 1% de Sobrepeso/Obesidad. Por ende representa un grupo de relativa estabilidad económica y sanitaria.
+
+4\. Alto Bienestar (Verde): Se proyecta hacia los valores máximos y más extremos de ingreso. Muestra riesgo sanitario minimo y mas controlado de todos los clusters (la mayoria bajo 0,75%). Es un grupo pequeño y exclusivo que concentra el maximo nivel de ingreso y control sobre riesgos sanitarios
+
+```{r grafico2, echo=TRUE, message=FALSE, warning=FALSE}
+# ----------------------------------------------------
+# Gráfico 2: Bienestar vs. Capital Humano (Ingreso vs. Escolaridad)
+# ----------------------------------------------------
+plot_ingreso_esc = ggplot(zonas_gs_clusters, aes(x = ptje_esc_mayor_16, y = mediana_ingreso, color = cluster_etiqueta)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(
+    title = "Distribución de Clusters: Ingreso vs. Escolaridad",
+    x = "% Población con >= 16 años de Escolaridad (Capital Humano)",
+    y = "Mediana de Ingreso Percápita Estimada (CLP)"
+  ) +
+  scale_color_manual(
+    name = "Perfil de Vulnerabilidad",
+    values = c(
+      "Doble Vulnerabilidad Crítica" = "#E41A1C",           # Rojo
+      "Déficit de Capital Humano y Riesgo Sanitario" = "#FF7F00",  # Naranja
+      "Clase Media Consolidada" = "#377EB8",                # Azul
+      "Alto Bienestar/Capital Humano" = "#4DAF4A"           # Verde
+    )
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+
+print(plot_ingreso_esc)
+```
+
+**Análisis Gráfico Ingreso v/s Escolaridad (Educación Superior)**
+
+Este gráfico revela una fuerte correlación positiva entre la Mediana de Ingreso y el Capital Humano (Escolaridad), demostrando que el *clustering* agrupó las Zonas Censales según su nivel de oportunidad socioeconómica.
+
+1\. Doble Vulnerabilidad Crítica (Rojo) y Déficit de Capital Humano (Naranja): Estos *clusters* se agrupan en el extremo inferior izquierdo del gráfico (bajo Ingreso, baja Escolaridad), formando una base ancha y densa. El cluster Doble Vulnerabilidad (Rojo) muestra el mínimo absoluto de Escolaridad ($\approx 9\%$), lo que lo sitúa como el polo de la máxima carencia de capital humano. El cluster Déficit de Capital Humano (Naranja) tiene una ligera mejora en ambos ejes, pero sigue anclado en la parte baja de la distribución, justificando su alto riesgo estructural.
+
+2\. Clase Media Consolidada (Azul): Este *cluster* forma una zona de ascenso bien definida en el medio-alto del gráfico (Ingreso Alto, Escolaridad Media-Alta). El Azul se separa claramente de los *clusters* de vulnerabilidad. El Ingreso Percápita se estabiliza en la zona de $500.000$ a $1.000.000$ CLP, pero lo más notable es que la Escolaridad salta por encima del $40\%$. Representa la consolidación socioeconómica. El salto en Capital Humano (Escolaridad) actúa como la barrera de entrada que separa este grupo de los perfiles de déficit.
+
+3\. Alto Bienestar/Capital Humano (Verde): El *cluster* se proyecta hacia la esquina superior derecha (Máximo Ingreso, Máxima Escolaridad), con una dispersión vertical y horizontal muy estrecha. Muestra el máximo nivel de Capital Humano ($\approx 50\%$ a $60\%$ de la población con alta escolaridad) y el máximo nivel de Ingreso (sobre $1.250.000$ CLP). Este polo confirma que la acumulación de capital humano y económico define el segmento de menor riesgo, solidificando el patrón de segregación en el extremo superior de la distribución social.
+
+### 2.3.7 Mapa de Clusters (K=4)
+
+Esta sección genera la visualización principal del trabajo. El Mapa de Clusters territorializa los cuatro perfiles de vulnerabilidad, utilizando una paleta de colores coherente con el riesgo (Rojo = Máximo Riesgo). Se aplica un ajuste espacial (`coord_sf`) para enfocar el análisis en el área urbana de la Provincia de Santiago.
+
+```{r mapa_1, echo=TRUE, message=FALSE, warning=FALSE}
+## 5. VISUALIZACIÓN DE CLUSTERS (MAPA 1 - K=4) ####
+
+# Reestablecer Conexión (si ya se cerró en la Sección 2)
+db_host     = "localhost"; db_port = 5432; db_name = "censo_rm_2017"; 
+db_user     = "postgres"; db_password = "postgres"
+
+con = dbConnect(Postgres(), dbname=db_name, host=db_host, port=db_port, user=db_user, password=db_password)
+
+# Cargar Geometría Comunal
+sql_comunas = "
+SELECT nom_comuna, geom, nom_provin
+FROM dpa.comunas_rm_shp
+WHERE nom_provin = 'SANTIAGO';
+"
+sf_comunas_santiago = st_read(con, query = sql_comunas)
+dbDisconnect(con) 
+
+# Calcular Centroides y Bounding Box (necesario para el mapa)
+centroides_comuna = st_centroid(sf_comunas_santiago)
+bbox_clusters = st_bbox(zonas_gs_clusters)
+
+# Reutilizamos las geometrías y límites calculados previamente (sf_comunas_santiago, centroides_comuna, bbox_clusters)
+
+mapa_clusters_k4 = ggplot() +
+  geom_sf(data = zonas_gs_clusters, aes(fill = cluster_etiqueta), color = NA) +
+  geom_sf(data = sf_comunas_santiago, fill = NA, color = "black", linewidth = 0.5) +
+  geom_sf_text(data = centroides_comuna, aes(label = nom_comuna), size = 2.5, fontface = "bold") +
+  
+  # === Mapeo de color para 4 grupos (ROJO -> NARANJA -> AZUL CLARO -> VERDE) ===
+  scale_fill_manual(
+    name = "Perfil de Vulnerabilidad",
+    values = c(
+      "Doble Vulnerabilidad Crítica" = "#E41A1C",           # 1. Rojo (Máximo Riesgo)
+      "Déficit de Capital Humano y Riesgo Sanitario" = "#FF7F00",  # 2. Naranja (Alto Riesgo Sanitario)
+      "Clase Media Consolidada" = "#377EB8",                # 3. Azul (Riesgo Controlado)
+      "Alto Bienestar/Capital Humano" = "#4DAF4A"           # 4. Verde (Mínimo Riesgo)
+    )
+  ) +
+  
+  labs(
+    title = "Mapa de Clusters (K=4) de Zonas Censales",
+    subtitle = "Segmentación Multivariada basada en Obesidad, Ingreso y Escolaridad"
+  ) +
+  coord_sf(
+    xlim = c(bbox_clusters["xmin"], bbox_clusters["xmax"]),
+    ylim = c(bbox_clusters["ymin"], bbox_clusters["ymax"]),
+    expand = FALSE
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+print(mapa_clusters_k4)
+```
+
+**Análisis del Mapa de Clusters (K=4) por Zona Censal en Provincia de Santiago.**
+
+El Mapa de Clusters (K=4) revela que la vulnerabilidad no es aleatoria, sino un fenómeno multidimensional y espacialmente segregado en la Provincia de Santiago. La segmentación confirma que el Riesgo Sanitario (Obesidad) es una consecuencia directa del Déficit de Capital Humano y Económico en el territorio.
+
+1.  **Polo de Bienestar (Verde)**: El *cluster* Alto Bienestar/Capital Humano se ancla en el sector nororiente, cubriendo el eje Vitacura-Las Condes-Providencia-Ñuñoa. La concentración de este cluster es altamente esperable. Representa la Triple Carga Positiva; los niveles más altos de Ingreso y Escolaridad permiten a los residentes mantener un estado de salud controlado (tasas de sobrepeso/obesidad mínimas). Esta evidencia valida el principio de que el Capital Humano funciona como un factor protector que confiere mayor agencia para combatir el riesgo sanitario a través de la educación nutricional y el acceso a entornos saludablese este cluster es altamente esperable. Representa la Triple (gimnasios, áreas verdes de calidad, comercio saludable,etc.).
+
+2.  **Clase Media Consolidada (Azul)**: Es la barrera educativa, se ubica en el área central-oriente, formando una segunda capa que colinda con el cluster Verde. Este grupo es prominente en La Reina, Lo Barnechea, Peñalolen, La Florida, Ñuñoa, Macul, Santiago, San Miguel. Este grupo, con los segundos mejores estándares de ingreso, muestra una dispersión más horizontal y centralizada que el Verde. El factor clave es el Alto Nivel de Profesionales y Educación, que mantiene sus tasas de Obesidad en niveles bajos, a pesar de tener ingresos inferiores al cluster Verde. Este cluster marca la barrera de entrada a la estabilidad, donde el Capital Humano (educación) es el principal motor que permite romper la correlación directa entre Obesidad y Bajo Ingreso.
+
+3.  **Déficit de Capital Humano y Riesgo Sanitario (Naranjo):** Es la franja de riesgo medio-alto. Muestra una distribución mixta, abarcando desde zonas centrales (Santiago, Independencia, San Joaquín, Conchali, Recoleta, Estacion Central, ) hasta la periferia (Maipú, Pudahuel, Quilicura, Huecuraba, La Granja, La Florida). Esta segmentación es crucial. Se caracteriza por un déficit estructural de profesionales y bajos ingresos, lo que se traduce en tasas de sobrepeso/obesidad medias-altas. Este cluster es ideal para la focalización de políticas preventivas y de largo plazo. Las intervenciones deben centrarse en educación y capacitación profesional (financiamiento de becas, centros de formación técnica), ya que el apoyo en el Capital Humano es la vía más efectiva para revertir a largo plazo el riesgo sanitario y económico.
+
+4.  **Doble Vulnerabilidad Crítica (Rojo):** Es la acumulación de Déficits, domina claramente en el poniente (Renca, Cerro Navia), el extremo norte (Quilicura), el extremo Sur (La Pintana, Lo espejo) y sur-poniente ( Maipú, Lo Espejo). En general se presenta en periferias y es la evidencia mas clara de la segregación de la Provincia. Este cluster está expuesto a la máxima vulnerabilidad de la provincia, caracterizada por los ingresos y porcentajes de profesionales más bajos. Esto se traduce en los niveles más altos y críticos de sobrepeso/obesidad. El apoyo aquí debe ser urgente e integral. Los programas no deben centrarse solo en la Obesidad, sino en una intervención multidimensional que aborde las causas estructurales: mejora de la calidad alimentaria, recuperación de áreas verdes y equipamiento recreacional (como sugirió, hay una fuerte conexión entre falta de espacio público y problemas de salud), y apoyo directo al ingreso y la seguridad alimentaria. Este cluster requiere un estudio más profundo sobre la carencia de infraestructura saludable.
+
+**Propuestas a futuras Investigaciones relacionadas.**
+
+El análisis resalta que la salud y la economía son fenómenos interdependientes. Para futuras investigaciones, se propone:
+
+-   Validación Geoespacial de la Infraestructura: Alinear este trabajo con el Inventario de Áreas Verdes y equipamientos deportivos para validar la hipótesis de que las Zonas Censales con el Cluster Rojo tienen el menor acceso a infraestructura de vida saludable.
+
+-   Análisis Nutricional Compuesto: Incluir variables sobre desnutrición en la microsimulación para evaluar si estas mismas Zonas de Vulnerabilidad Crítica enfrentan la doble carga de la malnutrición (desnutrición en niños y obesidad en adultos), lo cual profundizaría el entendimiento de la crisis sanitaria.
+
+### 2.3.8 Índice de Shannon
+
+Finalmente, se aborda el análisis de la variabilidad intra-comunal. El código calcula el Índice de Shannon ($H$) para cada comuna, cuantificando la heterogeneidad de los perfiles de clusters. El mapa resultante es clave para la toma de decisiones, ya que distingue entre comunas homogéneas y aquellas con alta segregación interna.
+
+```{r indice_shannon, echo=TRUE, message=FALSE, warning=FALSE}
+## 6. ÍNDICE DE SHANNON (VARIABILIDAD INTRA-COMUNAL) ####
+
+# ----------------------------------------------------
+# 6.1. Cálculo del Índice de Shannon
+# ----------------------------------------------------
+# El Índice de Shannon (H) mide la diversidad de los clusters (la heterogeneidad)
+# dentro de cada unidad geográfica superior (la comuna).
+
+shannon_df = zonas_gs_clusters %>%
+  st_drop_geometry() %>%
+  group_by(nom_comuna) %>%
+  mutate(total_zc = n()) %>% # Total de Zonas Censales (ZC) por Comuna
+  group_by(nom_comuna, cluster) %>%
+  summarise(
+    n_cluster = n(),
+    total_zc = first(total_zc),
+    .groups = 'drop_last'
+  ) %>%
+  # 1. Calcular la Proporción (p_ij) de cada cluster por comuna
+  mutate(p_ij = n_cluster / total_zc) %>%
+  # 2. Aplicar la fórmula de Shannon (p_ij * ln(p_ij))
+  mutate(shannon_comp = p_ij * log(p_ij)) %>%
+  # 3. Sumar y Negar el resultado (H = -SUM(p_ij * ln(p_ij)))
+  summarise(
+    indice_shannon = -sum(shannon_comp, na.rm = TRUE)
+  )
+
+# ----------------------------------------------------
+
+## 6.2. Mapa de Variabilidad Interna (SOLUCIÓN FINAL DE ETIQUETAS - MATRIZ DE COORDENADAS) ####
+
+# ----------------------------------------------------
+# Define los límites del mapa usando las Zonas Censales:
+# ----------------------------------------------------
+bbox_clusters = st_bbox(zonas_gs_clusters)
+
+# 1. Volvemos a obtener el centroide original (Limpio)
+# Necesitas reestablecer la conexión con la BD si la habías cerrado
+db_host     = "localhost"; db_port = 5432; db_name = "censo_rm_2017"; 
+db_user     = "postgres"; db_password = "postgres"
+
+con = dbConnect(Postgres(), dbname=db_name, host=db_host, port=db_port, user=db_user, password=db_password)
+
+sql_comunas = "SELECT nom_comuna, geom, nom_provin FROM dpa.comunas_rm_shp WHERE nom_provin = 'SANTIAGO';"
+sf_comunas_santiago = st_read(con, query = sql_comunas)
+dbDisconnect(con) 
+sf_shannon = sf_comunas_santiago %>%
+  left_join(shannon_df, by = "nom_comuna")
+
+# Recalculamos el centroide para evitar el objeto SF roto
+centroides_original = st_centroid(sf_comunas_santiago)
+centroides_final = centroides_original 
+
+# 2. Creamos un vector de desplazamiento (X, Y)
+coordenadas_ajustadas = st_coordinates(centroides_final)
+
+# 3. Aplicamos el desplazamiento a las coordenadas (basado en el índice de la comuna)
+for (i in 1:nrow(centroides_final)) {
+  comuna = centroides_final$nom_comuna[i]
+  
+  if (comuna == "LO BARNECHEA") {
+    coordenadas_ajustadas[i, "X"] = -70.47
+    coordenadas_ajustadas[i, "Y"] = -33.30
+  } else if (comuna == "PUDAHUEL") {
+    coordenadas_ajustadas[i, "X"] = -70.81
+    coordenadas_ajustadas[i, "Y"] = -33.40
+  } else if (comuna == "MAIPU") {
+    coordenadas_ajustadas[i, "X"] = -70.80
+    coordenadas_ajustadas[i, "Y"] = -33.60
+  }
+}
+
+# 4. Creamos una nueva geometría (sfc) a partir de las coordenadas ajustadas
+# Usamos el CRS original (necesario para la compatibilidad del mapa)
+crs_original = st_crs(centroides_final) 
+
+# Creamos la nueva colección de puntos (sfc)
+nueva_geometria = st_sfc(
+  sapply(1:nrow(coordenadas_ajustadas), function(i) {
+    st_point(coordenadas_ajustadas[i, ])
+  }, simplify = FALSE),
+  crs = crs_original
+)
+
+# 5. Reasignamos la nueva geometría al objeto SF original
+st_geometry(centroides_final) = nueva_geometria
+
+# ----------------------------------------------------
+# 5. Generación del Mapa Final de Shannon (Usamos centroides_final)
+# ----------------------------------------------------
+
+
+mapa_shannon_final = ggplot(sf_shannon) +
+  geom_sf(aes(fill = indice_shannon), color = "black", linewidth = 0.5) +
+  
+  scale_fill_viridis_c(
+    option = "plasma", 
+    direction = -1, 
+    name = "Índice de Shannon (H)"
+  ) +
+  
+  # Usamos el objeto con las etiquetas corregidas:
+  geom_sf_text(
+    data = centroides_final, # <<-- OBJETO FINAL CORREGIDO
+    aes(label = nom_comuna), 
+    size = 2.5, 
+    fontface = "bold"
+  ) +
+  
+  labs(
+    title = "Diversidad de Clusters (Índice de Shannon) por Comuna",
+    subtitle = "Alto H: Alta segregación interna de perfiles de vulnerabilidad."
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5),
+    legend.position = "right"
+  ) +
+  
+  coord_sf(
+    xlim = c(bbox_clusters["xmin"], bbox_clusters["xmax"]),
+    ylim = c(bbox_clusters["ymin"], bbox_clusters["ymax"]),
+    expand = FALSE
+  )
+
+print(mapa_shannon_final)
+
+```
+
+**Análisis Detallado del Índice de Shannon por Comuna**
+
+El Mapa de la Diversidad de Clusters (Índice de Shannon) es una métrica esencial para la gestión territorial, ya que transforma el análisis de tipologías (clusters) en un indicador de segregación interna y complejidad administrativa. Un valor alto de H (tonos Morados/Naranjas) indica que la comuna posee una alta coexistencia de los cuatro perfiles de vulnerabilidad, mientras que un valor bajo (Amarillo) indica uniformidad social
+
+**1. Comunas Homogéneas (Bajo Desafío)**
+
+Estas comunas presentan los valores más bajos de $H$ ($H \approx 0.0$ a $0.35$), confirmando que su realidad es transversal y predecible.
+
+-   Polo de Bienestar (H Mínimo): Comunas como Vitacura son uniformemente de Alto Bienestar, mientras que La Pintana es predominantemente de Vulnerabilidad Crítica.
+
+-   Implicancias: El bajo $H$ confirma que la política pública puede ser uniforme a nivel comunal, ya que el perfil de riesgo es constante en toda su extensión.
+
+**2. Comunas de Máxima Segregación (Alto Desafío**
+
+Estas comunas lideran el índice, con valores cercanos o superiores a $H \approx 0.60$ (tonos Morados/Naranjas), evidenciando la coexistencia de múltiples realidades sociales en sus barrios.
+
+-   Polo de Contraste: Huechuraba y La Florida tienen los índices más altos, lo cual se explica por la polarización geográfica (por ejemplo, barrios empresariales o viviendas de alto ingreso en contraste con zonas de bajos recursos).
+
+-   Núcleo Mixto: Comunas como Ñuñoa, Santiago y Peñalolén también muestran una alta diversidad ($H$).
+
+-   Implicancias: Esta alta segregación obliga a las administraciones a implementar una planificación granular a escala de Zona Censal, abandonando la política de promedio comunal. El mapa de Shannon es una alerta de gestión sobre la ineficiencia de los programas de salud o desarrollo social no focalizados.
+
+Es coherente con lo observado en el Trabajo 2?, ¿Aporta algo nuevo este análisis respecto al anterior?, ¿En qué podría ser útil conocer la distribución de estos grupos en la práctica?
+
+# 3. Conclusión
+
+El presente estudio culmina con éxito el desafío de sus objetivos, la segmentación multidimensional geoespacial y un esfuerzo que no hubiera sido posible sin la base metodológica del Trabajo 2 (Microsimulación). Al alinear las preguntas estructurales del CENSO con las variables de riesgo de la CASEN, el proceso demostró la capacidad de generar datos socioeconómicos detallados a nivel de Zona Censal (ZC) y validar el poder predictivo del dato simulado para el ordenamiento territorial.
+
+La metodología aplicada, que combinó dos microsimulaciones (Tasa de Sobrepeso e Ingreso Percápita) con la Escolaridad del CENSO en un Análisis Multivariado K-Means, eleva el valor del análisis a un mayor nivel. Los datos georeferenciados y segmentados son un insumo vital para gobernar con precisión. La segmentación en $K=4$ perfiles de riesgo constituye un instrumento de inteligencia territorial que transforma datos complejos en categorías de acción directa.
+
+El presente análisis multivariado es fundamentalmente coherente con los patrones de segregación observados en el Trabajo 2 (Mapa Bivariado Obesidad vs. Ingreso). El T3 reafirma que el riesgo se acumula de manera predecible, con la Doble Vulnerabilidad Crítica (Rojo) dominando la periferia poniente, validando que el Bajo Capital Humano y el Bajo Ingreso son los motores de la crisis sanitaria.
+
+Sin embargo, el valor añadido de la segmentación en $K=4$ es la matización del riesgo y la identificación de la Clase Media Consolidada. Mientras el T2 solo mostraba una gradiente de riesgo (Morado $\rightarrow$ Amarillo), el T3 logra desagregar el riesgo intermedio en dos perfiles funcionales: las zonas con Déficit de Capital Humano (Naranja), que requieren inversión a largo plazo en educación, y las zonas de Clase Media Consolidada (Azul), que mantienen su riesgo controlado. Esta distinción es crucial para la política pública, ya que permite la transición de una política de compensación de la pobreza a una política de inversión estratégica que ataque las causas estructurales (educación y empleo) que definen la salud y el bienestar en el territorio.
+
+Los resultados de la segmentación confirman una fuerte dependencia de la salud con respecto al capital socioeconómico: el Cluster Doble Vulnerabilidad Crítica (Rojo) agrupa la mínima escolaridad, el mínimo ingreso y la máxima tasa de obesidad. El análisis espacial y el Índice de Shannon revelan:
+
+-   Patrón de Oportunidad: El control sobre el riesgo sanitario solo se logra plenamente al acceder a los clusters de Clase Media Consolidada y Alto Bienestar, donde el ingreso y la educación actúan como factores protectores eficientes.
+
+-   Complejidad de Gestión: Las comunas de Alto $H$ (p. ej., Ñuñoa, La Florida) requieren una gestión compleja y micro-focalizada, mientras que las de Bajo $H$ (p. ej., Vitacura, La Pintana) permiten una política de intervención más uniforme.
+
+Para aumentar la rigurosidad y el valor del análisis, se recomienda la replicación del *clustering* con otras variables sanitarias que revelen la complejidad de la malnutrición. Variables como la Desnutrición (para evaluar la doble carga en las zonas de extrema vulnerabilidad) y la Validación Geoespacial de Infraestructura (alinear los clusters de alto riesgo con el déficit de áreas verdes y equipamiento deportivo) serían los siguientes pasos lógicos. Esto permitiría a los gobiernos territoriales avanzar hacia un ordenamiento territorial que no solo compense la pobreza, sino que invierta estratégicamente en los factores que construyen la salud y el bienestar.
+
+Finalizando y resumiendo, el valor de este trabajo radica en su capacidad para abordar de manera precisa y detallada, factores estructurales que inciden en la epidemia de obesidad y sobrepeso a nivel territorial en la provincia. Este enfoque permite comprender con mayor profundidad la distribución del riesgo y facilita la focalización de políticas públicas a nivel micro (ZC), orientadas a combatir este fenómeno desde sus causas estructurales. Conforme a lo recomendado por la Organización Mundial de la Salud y la OPS, “es fundamental implementar estrategias multisectoriales que promuevan entornos saludables y mejoren el acceso a alimentos saludables, junto con la educación nutricional, para detener la aceleración del sobrepeso y la obesidad” (OPS/OMS, 2024). En este sentido, la OMS llama a políticos, donantes y comunidades a unirse en una respuesta integral, priorizando intervenciones que aborden tanto la alimentación saludable como la actividad física a lo largo de la vida. Entre las medidas clave se incluyen regulaciones para proteger a los niños de la comercialización de alimentos no saludables, políticas fiscales orientadas a promover dietas saludables, etiquetado nutricional claro, y políticas escolares que regulen la venta de productos poco saludables cerca de las escuelas. Estas acciones son especialmente relevantes para zonas identificadas como de Doble Vulnerabilidad Crítica, donde el impacto puede ser mayor. Así, este trabajo contribuye directamente a la formulación de políticas públicas más efectivas y contextualmente adecuadas, reforzando la prevención y control de la obesidad en la población de la provincia.
+
+# 4. Bibliografía
+
+-   Ministerio de Desarrollo Social y Familia. (2022). *Encuesta de Caracterización Socioeconómica Nacional (CASEN 2022): Microdatos*. Subsecretaría de Evaluación Social.
+
+-   Instituto Nacional de Estadísticas (INE). (2017). *Censo de Población y Vivienda 2017: Base de datos a nivel de persona*. Santiago, Chile.
+
+-   INSTITUTO de Nutrición y Tecnología de Alimentos. (2024). Estudio demuestra que hay más acceso a comida poco saludable en sectores vulnerables y su relación con la obesidad infantil. INTA.[**https://inta.uchile.cl**](https://inta.uchile.cl/)
+
+-   Palma, S., & Cabezas, J. M. (2025). Educación, ingreso y obesidad en Chile: un análisis desde las Encuestas de Protección Social. Diario Mayor.[**https://diariomayor.cl**](https://diariomayor.cl/)
+
+-   Organización Mundial de la Salud. (2025). Obesidad y sobrepeso. [**https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight**](https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight)
+
+-   Organización Panamericana de la Salud, & Organización Mundial de la Salud. (2024, 8 de abril). En Chile OPS/OMS participa de presentación de la “Estrategia para Detener la Aceleración del Sobrepeso y Obesidad en la Niñez y Adolescencia”. OPS. [**https://www.paho.org/es/noticias/8-4-2024-chile-opsoms-participa-presentacion-estrategia-nacional-para-detener-aceleracion**](https://www.paho.org/es/noticias/8-4-2024-chile-opsoms-participa-presentacion-estrategia-nacional-para-detener-aceleracion)
+
+-   Organización Panamericana de la Salud, & Organización Mundial de la Salud. (2024, 7 de marzo). Más que una cuestión de peso. OPS. [**https://www.paho.org/es/noticias/7-3-2024-mas-que-cuestion-peso**](https://www.paho.org/es/noticias/7-3-2024-mas-que-cuestion-peso)
