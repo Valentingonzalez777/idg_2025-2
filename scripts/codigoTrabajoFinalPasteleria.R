@@ -185,7 +185,7 @@ lines(lowess(tabla_gasto$edad, tabla_gasto$gasto_pasteleria_total), col = "blue"
 # -------------------------------------------------------------
 
 # Base Logit (limpia)
-# Esta sección asegura que modelo_data esté disponible para el Logit. 🚨
+# 🚨 Esta sección asegura que modelo_data esté disponible para el Logit. 🚨
 modelo_data = subset(personas_gs, !is.na(edad) & !is.na(grupo_escolaridad) & !is.na(sexo))
 modelo_data$sexo <- factor(modelo_data$sexo, labels = c("Hombre", "Mujer"))
 
